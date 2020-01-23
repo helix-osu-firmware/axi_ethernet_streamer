@@ -1,0 +1,543 @@
+CONSTANT    mem_base,           80
+CONSTANT    packet_control,     00
+CONSTANT    bram_bank,          01
+CONSTANT    packet_txlen_0,     02
+CONSTANT    packet_txlen_1,     03
+CONSTANT    ip_0,               04
+CONSTANT    ip_1,               05
+CONSTANT    ip_2,               06
+CONSTANT    ip_3,               07
+CONSTANT    mac_port_0,         08
+CONSTANT    mac_port_1,         09
+CONSTANT    mac_port_2,         0A
+CONSTANT    mac_port_3,         0B
+CONSTANT    mac_port_4,         0C
+CONSTANT    mac_port_5,         0D
+CONSTANT    xid_port_0,         10
+CONSTANT    xid_port_1,         11
+CONSTANT    xid_port_2,         12
+CONSTANT    xid_port_3,         13
+
+CONSTANT    counter_0,          00
+CONSTANT    counter_1,          01
+CONSTANT    counter_2,          02
+CONSTANT    counter_3,          03
+
+CONSTANT    state_IDLE,         00
+CONSTANT    state_DHCPDISCOVER, 01
+CONSTANT    state_DHCPREQUEST,  02
+CONSTANT    state_DHCPACK,      03
+
+NAMEREG     s8,                 mac_0
+NAMEREG     s9,                 mac_1
+NAMEREG     sA,                 mac_2
+NAMEREG     sB,                 mac_3
+NAMEREG     sC,                 mac_4
+NAMEREG     sD,                 mac_5
+NAMEREG     sE,                 state
+
+
+; VERY basic DHCP crap.
+; 
+; Right now no timers, no retrying, no nothing. Just one DHCP sequence to see if we can get it to work.
+; 
+reset:
+            input   mac_0, mac_port_0
+            input   mac_1, mac_port_1
+            input   mac_2, mac_port_2
+            input   mac_3, mac_port_3
+            input   mac_4, mac_port_4
+            input   mac_5, mac_port_5
+            load    state, state_IDLE
+            load    s0, 00
+            store   s0, counter_0
+            store   s0, counter_1
+            store   s0, counter_2
+            store   s0, counter_3
+main:
+            compare state, state_IDLE
+            jump    Z, do_idle
+            compare state, state_DHCPDISCOVER
+            jump    Z, do_discover
+            compare state, state_DHCPREQUEST
+            jump    Z, do_request
+            compare state, state_DHCPACK
+            jump    Z, do_ack
+            load    state, state_IDLE
+            jump    main
+
+do_idle:
+            ; are we even running
+            input   s0, packet_control
+            test    s0, 40
+            jump    Z,  main
+            ; check the timer, has it expired?
+            disable interrupt
+            fetch   s0, counter_0
+            fetch   s1, counter_1
+            fetch   s2, counter_2
+            fetch   s3, counter_3
+            enable  interrupt
+            compare     s0, 00
+            comparecy   s1, 00
+            comparecy   s2, 00
+            comparecy   s3, 00
+            jump    Z,  do_idle_jp1
+            ; no, so do.... something?
+            ; right now just loop.
+            jump    main
+do_idle_jp1:
+            ; it has, so send a DHCP discover.
+            load    state, state_DHCPDISCOVER
+            jump    main
+
+do_discover:
+            ; craft a DHCPDISCOVER message    
+            call    basic_dhcp
+            ; we're now on bram bank 2. Fill in options.
+            load    s1, 35
+            output  s1, F0
+            load    s1, 01  ; Now DHCP options (0x01, 0x01, 0x3D, 0x07, 0x01, MAC address, 0xFF)
+            output  s1, F1
+            output  s1, F2
+            load    s1, 3D
+            output  s1, F3
+            load    s1, 07
+            output  s1, F4
+            load    s1, 01
+            output  s1, F5
+            output  mac_0, F6
+            output  mac_1, F7
+            output  mac_2, F8
+            output  mac_3, F9
+            output  mac_4, FA
+            output  mac_5, FB
+            load    s0, FF
+            output  s0, FC  ; done! Packet is 253 bytes long. We write 1 minus the length.
+            load    s0, FC
+            load    s1, 00
+            output  s0, packet_txlen_0
+            output  s1, packet_txlen_1
+            ; and output the packet and wait to complete
+            load    s0, 10
+            output  s0, packet_control
+do_discover_lp1:
+            input   s0, packet_control
+            test    s0, 10
+            jump    NZ,  do_discover_lp1
+            ; accept next packet
+            load    s0, 01
+            output  s0, packet_control
+            load    state, state_DHCPREQUEST
+            ; set up a 3 second timer
+            load    s0, 03
+            load    s1, 00
+            load    s2, 00
+            load    s3, 00
+            disable interrupt
+            store   s0, counter_0
+            store   s1, counter_1
+            store   s2, counter_2
+            store   s3, counter_3
+            enable interrupt
+            jump    main
+            
+do_request:
+            ; check to see if we have a packet
+            input   s0, packet_control
+            ; first check partial completion
+            test    s0, 04
+            ; if nothing, check timer or short packet.
+            jump    Z, do_request_check
+            ; OK, we have a packet. Check the transaction ID.
+            ; The transaction ID is at 84, 85, 86, 87.
+            input   s0, xid_port_0
+            input   s1, xid_port_1
+            input   s2, xid_port_2
+            input   s3, xid_port_3
+            compare     s0, DE
+            comparecy   s1, AD
+            comparecy   s2, BE
+            comparecy   s3, EF
+            jump    Z,  do_request_jp1
+            ; not ours
+do_request_dump_packet:
+            load    s0, 01
+            output  s0, packet_control
+            jump    main
+do_request_jp1:
+            ; it's ours! Wait until it completes.
+            input   s0, packet_control
+            and     s0, 07
+            jump    NZ, do_request_jp1
+            ; Packet complete. 
+            ; is this an offer? Check option 0x35 (should be first one)
+            load    s0, 01
+            output  s0, bram_bank
+            input   s0, F0
+            compare s0, 35
+            jump    NZ, do_request_dump_packet
+            input   s0, F2
+            compare s0, 02
+            ; no
+            jump    NZ, do_request_dump_packet
+            ; yes, we do. Now hopefully find the server identifier...
+            ; Go to packet+0xF3
+            load    s3, 01
+            load    s2, F3
+do_request_jp2:
+            input   s1, (s2)
+            ; is it 0x36 (server identifier)?
+            compare s1, 36
+            jump    Z,  do_request_jp4
+            ; yes - finish
+            ; no - continue
+do_request_jp3:
+            load    s1, 01
+            call    increment_bram
+            jump    C, do_request_dump_packet
+            input   s1, (s2)
+            ; we now have the length. add 1 (for the length byte itself) and move forward
+            add     s1, 01
+            call    increment_bram
+            jump    C, do_request_dump_packet
+            ; go back and repeat.
+            jump    do_request_jp2
+do_request_jp4:
+            ; we now have the server identifier.
+            load    s1, 01            
+            call    increment_bram
+            jump    C, do_request_dump_packet
+            input   s1, (s2)
+            compare s1, 04
+            jump    NZ, do_request_dump_packet
+            ; Now we need to get the server identifier and store it somewhere. Do that in [0x07:0x04].
+            load    s4, 07
+do_request_jp5:
+            load    s1, 01
+            call    increment_bram
+            jump    C, do_request_dump_packet
+            input   s1, (s2)
+            store   s1, (s4)
+            sub     s4, 01
+            compare s4, 03
+            jump    NZ, do_request_jp5
+            ; now fetch the IP address
+            load    s0, 00
+            output  s0, bram_bank
+            ; YIADDR is at xid+12, after xid(4)secs(2)/flags(2)/ciaddr(4). XID is at 84. 84+C=90.
+            input   s0, 90
+            input   s1, 91
+            input   s2, 92
+            input   s3, 93
+            output  s0, ip_3
+            output  s1, ip_2
+            output  s2, ip_1
+            output  s3, ip_0
+            ; Debugging. Let's swap things around. RAM access is cool.
+            load    s0, 01
+            output  s0, bram_bank
+
+            ; DHCP option 0x35: message type = DHCP request
+            load    s1, 35
+            output  s1, F0
+            load    s1, 01
+            output  s1, F1
+            ; DHCP REQUEST
+            load    s1, 03
+            output  s1, F2
+            ; DHCP option 0x3D: client identifier
+            load    s1, 3D
+            output  s1, F3
+            load    s1, 07
+            output  s1, F4
+            ; type and MAC address
+            load    s1, 01
+            output  s1, F5
+            output  mac_0, F6
+            output  mac_1, F7
+            output  mac_2, F8
+            output  mac_3, F9
+            output  mac_4, FA
+            output  mac_5, FB
+            ; DHCP option 0x32: IP request
+            load    s1, 32
+            output  s1, FC
+            load    s1, 04
+            output  s1, FD
+            ; grab IP address
+            input   s1, ip_3
+            output  s1, FE
+            input   s1, ip_2
+            output  s1, FF
+            ; crossing to bank 2
+            load    s0, 02
+            output  s0, bram_bank
+            input   s1, ip_1
+            output  s1, 80
+            input   s1, ip_0
+            output  s1, 81
+            ; DHCP option 0x36: Server identifier
+            load    s1, 36
+            output  s1, 82
+            load    s1, 04
+            output  s1, 83
+            ; grab server ID from RAM
+            fetch   s1, 07
+            output  s1, 84
+            fetch   s1, 06
+            output  s1, 85
+            fetch   s1, 05
+            output  s1, 86
+            fetch   s1, 04
+            output  s1, 87
+            ; and we're done
+            load    s1, FF
+            output  s1, 88
+            ; we're at 0x108
+
+            ; jump back to bank 0
+            load    s0, 00
+            output  s0, bram_bank                    
+            ; Now construct a DHCPREQUEST packet.
+            call    basic_dhcp
+
+            ; total length is 0x108.
+            load    s0, 08
+            load    s1, 01
+            output  s0, packet_txlen_0
+            output  s1, packet_txlen_1
+            load    s0, 10
+            output  s0, packet_control
+do_request_jp6:
+            input   s0, packet_control
+            test    s0, 10
+            jump    NZ, do_request_jp6
+            ; and accept new packet, to get the ACK
+            load    s0, 01
+            output  s0, packet_control
+            load    state, state_DHCPACK
+            jump    main
+do_request_check:
+            input   s0, packet_control
+            and     s0, 07
+            jump    NZ, do_request_check_timer
+            ; short packet received, dump it
+            jump    do_request_dump_packet            
+do_request_check_timer:
+            disable interrupt
+            fetch   s0, counter_0
+            fetch   s1, counter_1
+            fetch   s2, counter_2
+            fetch   s3, counter_3
+            enable interrupt
+            compare s0, 00
+            comparecy s1, 00
+            comparecy s2, 00
+            comparecy s3, 00
+            ; if it's not zero, just loop and continue
+            jump    NZ, main
+            ; Timer expired. Fall back to idle.
+            load    state, state_IDLE
+
+
+do_ack:
+            ; check to see if we have a packet
+            input   s0, packet_control
+            ; first check partial completion
+            test    s0, 04
+            jump    Z, do_ack_check
+            ; OK, we have a packet. Check the transaction ID.
+            ; The transaction ID is at 84, 85, 86, 87.
+            input   s0, xid_port_0
+            input   s1, xid_port_1
+            input   s2, xid_port_2
+            input   s3, xid_port_3
+            compare     s0, DE
+            comparecy   s1, AD
+            comparecy   s2, BE
+            comparecy   s3, EF
+            jump    Z,  do_ack_jp1
+            ; not ours
+do_ack_dump_packet:
+            load    s0, 01
+            output  s0, packet_control
+            jump    main
+do_ack_jp1:            
+            ; it's ours, so wait for packet completion 
+            input   s0, packet_control
+            and     s0, 03
+            jump    NZ, do_ack_jp1
+            ; packet complete
+            ;so check to see if it's an ACK
+            load    s0, 01
+            output  s0, bram_bank
+            input   s0, F0
+            compare s0, 35
+            jump    NZ, do_ack_dump_packet
+            input   s0, F2
+            compare s0, 05
+            jump    NZ, do_ack_dump_packet
+            ; it's an ack. Set valid, we're done.
+            input   s0, packet_control
+            test    s0, 80
+            jump    NZ, do_ack_jp2
+            load    s0, 80
+            output  s0, packet_control
+do_ack_jp2:
+            ; this is bullcrap right now, just set some giant timer (12 hours)
+            load    s0, C0
+            load    s1, A8
+            load    s2, 00
+            load    s3, 00
+            disable interrupt
+            store   s0, counter_0
+            store   s1, counter_1
+            store   s2, counter_2
+            store   s3, counter_3
+            enable  interrupt
+            load    state, state_IDLE
+do_ack_check:
+            input   s0, packet_control
+            and     s0, 07
+            jump    NZ, do_ack_check_timer
+            jump    do_ack_dump_packet
+do_ack_check_timer:
+            disable interrupt
+            fetch   s0, counter_0
+            fetch   s1, counter_1
+            fetch   s2, counter_2
+            fetch   s3, counter_3
+            enable interrupt
+            compare s0, 00
+            comparecy s1, 00
+            comparecy s2, 00
+            comparecy s3, 00
+            ; if it's not zero, just loop and continue
+            jump    NZ, main
+            ; Timer expired. Fall back to idle.
+            load    state, state_IDLE
+                      
+; increment s2 by s1 bytes, safely
+; s3 contains the bank address
+; C will be set if there's something horribly wrong.
+increment_bram:
+            ; increment pointer
+            add     s2, s1
+            ; check to see if we've crossed FF
+            return  NC
+            ; we did. increment the bank identifier
+increment_bram_jp1:
+            add     s3, 01
+            ; we can only go up to 0x03, otherwise ALL HELL BREAKS LOOSE
+            compare s3, 04
+            ; we need to set C to force an error
+            jump    Z, increment_bram_error
+            output  s3, bram_bank
+            add     s2, 80
+            ; check to see if we've crossed FF
+            return  NC
+            ; we did! WHAT THE HELL. Increment it AGAIN.
+            jump    increment_bram_jp1                    
+            ; Note that this loop can't be infinite. Biggest we can have is if we read in FF at s1, and we're at FF.
+            ; Then FF+FF = 1FE = FE+80 = 7E+80 = FE.
+increment_bram_error:
+            ; s3 is now == 0x04
+            ; force C by comparing to 0x05 (0x04-0x05 is less than 0)
+            compare s3, 05
+            ; C must now be set, so return
+            return
+                
+basic_dhcp:
+            load    s0, 00
+            output  s0, bram_bank
+            load    s1, 01
+            output  s1, 80      ; 0: 0x01 OP
+            output  s1, 81      ; 1: 0x01 HTYPE (Ethernet)
+            load    s1, 06      
+            output  s1, 82      ; 2: 0x06 HLEN (Ethernet)
+            output  s0, 83      ; 3: 0x00 HOPS
+            load    s1, DE
+            output  s1, 84      ; 4: XID3  
+            load    s1, AD
+            output  s1, 85      ; 5: XID2
+            load    s1, BE
+            output  s1, 86      ; 6: XID1
+            load    s1, EF
+            output  s1, 87      ; 7: XID0
+            output  s0, 88      ; 8: 0x00 SEC0
+            output  s0, 89      ; 9: 0x00
+            load    s1, 80
+            output  s1, 8A      ;10: 0x80
+            ; Now 17 bytes of zeroes. Start at 11, stop when we reach 28 (1C+80)
+            load    s2, 8B
+basic_dhcp_lp1:
+            output  s0, (s2)
+            add     s2, 01
+            ; 
+            compare s2, 9C
+            jump    NZ, basic_dhcp_lp1
+            ; now mac address
+            output  mac_0,  9C
+            output  mac_1,  9D
+            output  mac_2,  9E
+            output  mac_3,  9F
+            output  mac_4,  A0
+            output  mac_5,  A1
+            ; now we need 202 zeroes.
+            ; We start at A2 and go to the end of this bank, which is FF.
+            ; We need to get to 236, which is 0xEC (1111_1100), or 0x7C in bank 01 (at address 0xEC).
+            load    s2,     A2
+basic_dhcp_lp2:
+            output  s0, (s2)
+            add     s2, 01
+            compare s2, 00
+            jump    NZ, basic_dhcp_lp2
+            ; next bank
+            load    s2, 01
+            output  s2, bram_bank
+            ; start at 80
+            load    s2, 80
+            ; and go to EC
+basic_dhcp_lp3:
+            output  s0, (s2)
+            add     s2, 01
+            compare s2, EC
+            jump    NZ, basic_dhcp_lp3
+            ; now at 236
+            load    s1, 63  ; DHCP magic cookie
+            load    s2, 82  ; DHCP magic cookie
+            load    s3, 53  ; DHCP magic cookie
+            load    s4, 63  ; DHCP magic cookie
+            output  s1, EC
+            output  s2, ED
+            output  s3, EE
+            output  s4, EF
+            return
+
+
+decrement_timer:
+    regbank b
+    fetch   s0, counter_0
+    fetch   s1, counter_1
+    fetch   s2, counter_2
+    fetch   s3, counter_3
+    sub     s0, 01
+    subcy   s1, 00
+    subcy   s2, 00
+    subcy   s3, 00
+    ; if we crossed 0 bail out
+    jump    C,  decrement_timer_exit
+    store   s0, counter_0
+    store   s1, counter_1
+    store   s2, counter_2
+    store   s3, counter_3
+decrement_timer_exit:
+    regbank a
+    returni enable
+
+ADDRESS 2FF
+isr:
+    jump    decrement_timer
+
+            

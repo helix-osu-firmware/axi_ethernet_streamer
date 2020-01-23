@@ -1,0 +1,257 @@
+; We've reduced this down to 106 instructions!
+; Plus we'll add in outputting the parsed DNA, so 
+; this adds very little overhead.
+;
+; Need to do in the HDL:
+;
+; 1: fix all of the IP ports so that they're big-endian
+;    that will allow an input_ip/output_ip copy.
+; 2: find best way to do outputk's
+;    packet_control 2 -> 01
+;    ip_control     4 -> 02
+;    stream_link    3 -> 00
+
+CONSTANT mem_base, 80
+
+CONSTANT stream_link,    00
+CONSTANT packet_control, 01
+CONSTANT ip_control,     02
+CONSTANT packet_txlen,   03
+
+; Output port
+CONSTANT port_1,         04
+CONSTANT port_0,         05
+
+; Big endian ordering
+CONSTANT stream_ip_3, 10
+CONSTANT stream_ip_2, 11
+CONSTANT stream_ip_1, 12
+CONSTANT stream_ip_0, 13
+
+; Big endian ordering 
+CONSTANT stream_udp_1, 14
+CONSTANT stream_udp_0, 15
+
+; Big endian ordering to match network byte order
+CONSTANT ip_3, 20
+CONSTANT ip_2, 21
+CONSTANT ip_1, 22
+CONSTANT ip_0, 23
+
+; DEVICE_DNA port
+CONSTANT dna, 40
+; 64-bit shift register (shifts by 8)
+CONSTANT dna_out, 60
+
+; Big endian ordering
+CONSTANT my_ip_3, 30
+CONSTANT my_ip_2, 31
+CONSTANT my_ip_1, 32
+CONSTANT my_ip_0, 33
+
+; Big endian ordering.
+CONSTANT dna_0, 00
+CONSTANT dna_7, 07
+
+CONSTANT command_NONE, 00
+CONSTANT command_ID, 01
+CONSTANT command_OP, 02
+CONSTANT command_CL, 03
+CONSTANT command_SI, 04
+CONSTANT command_DI, 05
+
+; Fetch the DNA. This is
+; a bit awkward because we need to
+; grab just the first bit (bit 57)
+; separate, otherwise it justifies wrong.
+; After that we can go bytewise.
+reset:
+	; just output something 
+	output s1, dna
+	load s0, dna_0
+	; now read in the bit
+	input s1, dna
+	store s1, (s0)
+	output s1, dna_out
+	; bit 57 done, now the rest.
+	; This wouldn't be any smaller with little endian
+	; ordering (I tried).
+reset_lp0:
+	add s0, 01
+	; set up the counter (via a shift register)
+	load s2, 01 
+reset_lp1:
+	input s1, dna
+	rr s1
+	sla s2
+	jump NC, reset_lp1
+	store s2, (s0)
+	output s2, dna_out
+	compare s0, 07
+	jump NZ, reset_lp0
+main:
+	outputk 01, packet_control
+main_wait_for_packet:
+	input s0, packet_control
+	and s0, 03
+	jump NZ, main_wait_for_packet
+decode_command:	
+	input s1, 80
+	input s2, 81
+	input s3, 82
+	input s7, packet_txlen 
+	compare s3, 00
+	jump NZ, main
+	compare s1, "I"
+	comparecy s2, "D"
+	jump Z, do_id_response
+	compare s1, "O"
+	comparecy s2, "P"
+	jump Z, do_op_response
+	compare s1, "C"
+	comparecy s2, "L"
+	jump Z, do_cl_response
+	compare s2, "I"
+	jump NZ, main
+	compare s1, "S"
+	jump Z, do_si_response
+	compare s1, "D"
+	jump NZ, main
+; Switch to DHCP. This invalidates static IP
+; and pulls DHCP out of reset. We don't respond
+; here because... well... no IP address.
+do_di_response:	
+	compare s7, 0A
+	jump C, main
+	call check_dna
+	jump NZ, main
+	; OK, it's for us
+	outputk 01, ip_control
+	outputk 00, ip_control
+	jump main
+do_si_response:
+	compare s7, 0E
+	jump C, main
+	call check_dna
+	jump NZ, main
+	; kick DHCP off
+	outputk 01, ip_control
+	; now get our IP address and write it
+	; iocopy: 8B -> 2C
+	;         8C -> 2D
+	;         8D -> 2E
+	;         8E -> 2F
+	load s4, 8B
+	load s5, my_ip_3
+	call iocopy4
+	outputk 03, ip_control
+	jump do_trim_response
+
+do_id_response:
+	; iocopy: 2C -> 83
+	;         2D -> 84
+	;         2E -> 85
+	;         2F -> 86
+	load s4, my_ip_3
+	load s5, 83
+	call iocopy4
+	; copy DNA from mem to 87/88/89/8A 8B/8C/8D/8E
+	; this is a fetch/mem from
+	; 00 -> 87
+	; 01 -> 88
+	; 02 -> 89
+	; 03 -> 8A
+	; 04 -> 8B
+	; 05 -> 8C
+	; 06 -> 8D
+	; 07 -> 8E
+	
+	; no iocopy for me :(
+	; at least the fetch/output loop isn't THAT bad.
+	load s1, 8E
+	load s2, dna_7
+do_id_response_lp1:
+	fetch sF, (s2)
+	output sF, (s1)
+	sub s1, 01
+	sub s2, 01
+	jump NZ, do_id_response_lp1
+	outputk 0E, packet_txlen
+	jump do_response
+
+do_op_response:
+	compare s7, 08
+	jump C, main
+	; unlink stream
+	outputk 00, stream_link
+	; grab IP...
+	; iocopy 83 -> 04
+	;        84 -> 05
+	;        85 -> 06
+	;        86 -> 07
+	load s4, 83
+	load s5, stream_ip_3
+	call iocopy4
+	; and grab port
+	; iocopy 87 -> 02
+	;        88 -> 03
+	load s4, 87
+	load s5, stream_udp_1
+	call iocopy2
+	; and link stream
+	outputk 01, stream_link
+	jump do_trim_response
+
+do_cl_response:
+	; empty command, no need to check anything
+	outputk 00, stream_link
+	jump do_trim_response
+
+do_trim_response:
+	outputk 02, packet_txlen
+do_response:
+	outputk "H", port_1
+	outputk "Y", port_0
+	outputk 10, packet_control
+do_response_lp1:
+	input s0, packet_control
+	test s0, 10
+	jump NZ, do_response_lp1
+	jump main
+
+	; need to compare 83/84/85/86 87/88/89/8A
+	; to              07/06/05/04 03/02/01/00
+check_dna:
+	load s0, dna_7
+	load s1, 83
+check_dna_lp1:
+	input s2, (s1)
+	fetch s3, (s0)
+	compare s2, s3
+	return NZ
+	add s1, 01
+	sub s0, 01
+	jump NC, check_dna_lp1
+	add s0, 01
+	return
+
+; nested functions for the win
+; this would take 8 instructions normally.
+; we could do an arbitrary loop
+; by passing a terminating address too,
+; and then it's 7 instructions total,
+; but an additional setup for each.
+; This is only 7 instructions PERIOD,
+; with no setup.
+; pass src = s4
+;      dst = s5
+iocopy4:
+	call iocopy2
+iocopy2:
+	call iocopy1
+iocopy1:
+	input s0, (s4)
+	output s0, (s5)
+	add s4, 01
+	add s5, 01
+	return
