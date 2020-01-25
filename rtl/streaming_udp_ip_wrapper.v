@@ -15,6 +15,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   output 	 m_axis_tx_tvalid,
 			   output 	 m_axis_tx_tlast,
 
+               output [57:0] device_dna,
 			   output [31:0] my_ip_address,
 			   output 	 my_ip_valid,
 			   input 	 do_dhcp,
@@ -32,6 +33,8 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   input 	 stream_axis_tx_tlast );
 
    parameter [47:0] MAC_ADDRESS = {48{1'b0}};   
+   
+   parameter DEBUG = "TRUE";
 
    reg [31:0] 				 destination_ip = {32{1'b0}};
    reg [15:0] 				 destination_port = {16{1'b0}};
@@ -183,14 +186,23 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    reg [2:0] 				 auto_dhcp_timer = {3{1'b0}};
    wire [3:0] 				 auto_dhcp_timer_plus_one = auto_dhcp_timer + 1;
    wire 				 dhcp_reset;
+   wire                  hycontrol_dhcp_reset;
+   
    always @(posedge m_axis_aclk) begin
-      if (auto_dhcp_timer_plus_one[3] && second_timer) auto_dhcp_done <= 1;
+      if (!m_axis_aresetn) auto_dhcp_done <= 0;
+      else if (auto_dhcp_timer_plus_one[3] && second_timer) auto_dhcp_done <= 1;
+
       auto_dhcp <= auto_dhcp_timer_plus_one[3] && second_timer;
-      if (!auto_dhcp_done && second_timer) auto_dhcp_timer <= auto_dhcp_timer_plus_one;
+
+      if (!m_axis_aresetn) auto_dhcp_timer <= {4{1'b0}};
+      else if (!auto_dhcp_done && second_timer) auto_dhcp_timer <= auto_dhcp_timer_plus_one;
    end
    
    wire [31:0] dhcp_ip_address;
    wire        dhcp_ip_valid;
+   wire [31:0] vio_ip_address;
+   wire        vio_ip_force;
+   assign      dhcp_reset = (vio_ip_force || hycontrol_dhcp_reset);
    wire [31:0] ip_address = (dhcp_ip_valid) ? dhcp_ip_address : {32{1'b0}};
 
    dhcp_top #(.MAC_ADDRESS(MAC_ADDRESS)) u_dhcp(.clk(m_axis_aclk),
@@ -219,8 +231,8 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [31:0] stream_ip_addr;
    wire [15:0] stream_port;
    
-   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),
-			   .dhcp_reset(dhcp_reset),.dhcp_ip_address(dhcp_ip_address),
+   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),
+			   .dhcp_reset(hycontrol_dhcp_reset),.dhcp_ip_address(dhcp_ip_address),
 			   .static_ip_address(static_ip_address),.static_ip_valid(static_ip_valid),
 			   // data/valid/last plus start
 			   .udp_in_start(control_in_start),
@@ -278,6 +290,37 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			      .req_C(stream_out_start),.gnt_C(stream_out_grant),.status_C(stream_out_result),
 			      .req_Y(udp_tx_start), .status_Y(udp_tx_result));
 
+
+    generate
+        if (DEBUG == "TRUE" || DEBUG == "ALL" || DEBUG == "ILA") begin : ILA
+            stream_debug_ila u_ila(.clk(m_axis_aclk),
+                                    .probe0(udp_tx_data_out),
+                                    .probe1(udp_tx_data_out_valid),
+                                    .probe2(udp_tx_data_out_ready),
+                                    .probe3(udp_tx_data_out_last),
+                                    .probe4(udp_tx_dst_port),
+                                    .probe5(udp_rx_data_in),
+                                    .probe6(udp_rx_data_in_valid),
+                                    .probe7(udp_rx_data_in_start),
+                                    .probe8(udp_rx_data_in_last),
+                                    .probe9(udp_rx_dst_port));
+        end
+        if (DEBUG == "TRUE" || DEBUG == "ALL" || DEBUG == "VIO") begin : VIO
+            stream_debug_vio u_vio(.clk(m_axis_aclk),
+                                    .probe_out0(vio_ip_address),
+                                    .probe_out1(vio_ip_force),
+                                    .probe_in0(dhcp_ip_valid),
+                                    .probe_in1(ip_address),
+                                    .probe_in2(stream_linked),
+                                    .probe_in3(stream_ip_addr),
+                                    .probe_in4(stream_port),
+                                    .probe_in5(device_dna));
+        end else begin : DUM
+            assign vio_ip_address = {32{1'b0}};
+            assign vio_ip_force = 0;
+        end
+   endgenerate
+
     // sigh, shrink the crap out of this
    udp_complete_nomac_wrapper #(.MAX_ARP_ENTRIES(32),.CLOCK_FREQ(100000000)) u_udp(.rx_clk(m_axis_aclk),.tx_clk(m_axis_aclk),.reset(!m_axis_aresetn),
 				    .sec_timer(second_timer),
@@ -290,7 +333,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 				    .mac_rx_tvalid(s_axis_rx_tvalid),
 				    .mac_rx_tlast(s_axis_rx_tlast),
 
-				    .our_ip_address(ip_address),
+				    .our_ip_address(my_ip_address),
 				    .our_mac_address(MAC_ADDRESS),
 				    .arp_pkt_count(arp_packet_count),
 				    .ip_pkt_count(ip_packet_count),
@@ -324,8 +367,8 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 				    .udp_rx_src_ip_addr(udp_rx_src_ip_addr),
 				    .udp_rx_is_valid(udp_rx_is_valid));
 
-   assign my_ip_address = (dhcp_reset) ? static_ip_address : dhcp_ip_address;
-   assign my_ip_valid = (dhcp_reset) ? static_ip_valid : dhcp_ip_valid;   
+   assign my_ip_address = (dhcp_reset) ? (vio_ip_force ? vio_ip_address : static_ip_address) : dhcp_ip_address;
+   assign my_ip_valid = (dhcp_reset) ? (vio_ip_force ? 1'b1 : static_ip_valid) : dhcp_ip_valid;   
    
 endmodule
 			   
