@@ -33,11 +33,15 @@ module hycontrol_top(
 	output 	      stream_linked,
 	output [31:0] stream_ip_address,
 	output [15:0] stream_udp_port,
+
+    output [56:0] device_dna_o,
 		     
         input 	      clk,
         input 	      reset,
         input 	      second
     );
+
+    reg [56:0] device_dna = {57{1'b0}};        
 
     reg [31:0] my_ip_address = {32{1'b0}};
     reg use_static_ip = 0;
@@ -159,6 +163,7 @@ module hycontrol_top(
     localparam [7:0] stream_udp_addr = 8'b0001_0100;
     // stream_udp[7:0]   15 0001_x101
     // packet_ip[31:24]  20 0010_xx00
+    // we never actually use this though
     localparam [7:0] pkt_ip_mask = 8'b1111_0000;
     localparam [7:0] pkt_ip_addr = 8'b0010_0000;
     // packet_ip[23:16]  21 0010_xx01
@@ -177,6 +182,7 @@ module hycontrol_top(
     localparam [7:0] dna_out_addr = 8'b0110_0000;
     // dna_out           60 011x_xxxx
     // buffer            80 1xxx_xxxx
+
 
     // IN_PORT
     // The only actual inputs we read are
@@ -274,15 +280,15 @@ module hycontrol_top(
 
         if (reset) packet_ip_addr <= {32{1'b0}};
         else if (going_to_accept_packet) packet_ip_addr <= udp_in_src_ip_addr;
-        else if (write_strobe && ((port_id & pkt_ip_mask) == pkt_ip_addr)) begin
-            // big endian
-            case(port_id[1:0])
-                2'b11: packet_ip_addr[0  +: 8] <= out_port;
-                2'b10: packet_ip_addr[8  +: 8] <= out_port;
-                2'b01: packet_ip_addr[16 +: 8] <= out_port;
-	            2'b00: packet_ip_addr[24 +: 8] <= out_port;	      
-            endcase
-        end
+//        else if (write_strobe && ((port_id & pkt_ip_mask) == pkt_ip_addr)) begin
+//            // big endian
+//            case(port_id[1:0])
+//                2'b11: packet_ip_addr[0  +: 8] <= out_port;
+//                2'b10: packet_ip_addr[8  +: 8] <= out_port;
+//                2'b01: packet_ip_addr[16 +: 8] <= out_port;
+//	            2'b00: packet_ip_addr[24 +: 8] <= out_port;	      
+//            endcase
+//        end
         
         if (reset) packet_port <= {16{1'b0}};
         else if (going_to_accept_packet) packet_port <= udp_in_src_port;
@@ -302,19 +308,34 @@ module hycontrol_top(
                 1'b0: stream_udp_port_reg[8 +: 8] <= out_port;
             endcase // case (port_id[0])
        end
+       // we just autocopy when a write occurs
        if (reset) stream_ip_address_reg <= {32{1'b0}};
        else if (write_strobe && ((port_id & stream_ip_mask) == stream_ip_addr)) begin
-            // big endian
-            case (port_id[1:0])
-                2'b11: stream_ip_address_reg[0 +: 8] <= out_port;
-                2'b10: stream_ip_address_reg[8 +: 8] <= out_port;
-                2'b01: stream_ip_address_reg[16 +: 8] <= out_port;
-                2'b00: stream_ip_address_reg[24 +: 8] <= out_port;
-            endcase // case (port_id[1:0])
+            stream_ip_address_reg <= packet_ip_addr;
+//            // big endian
+//            case (port_id[1:0])
+//                2'b11: stream_ip_address_reg[0 +: 8] <= out_port;
+//                2'b10: stream_ip_address_reg[8 +: 8] <= out_port;
+//                2'b01: stream_ip_address_reg[16 +: 8] <= out_port;
+//                2'b00: stream_ip_address_reg[24 +: 8] <= out_port;
+//            endcase // case (port_id[1:0])
        end
        if (reset) stream_linked_reg <= 1'b0;
        else if ((k_write_strobe || write_strobe) && ((port_id & stream_link_mask) == stream_link_addr) ) begin
            stream_linked_reg <= out_port[0];
+       end
+
+       if (write_strobe && ((port_id & dna_out_mask) == dna_out_addr)) begin
+            // shift up by 8, but it's only 57 bits.
+            // so grab 48
+            device_dna <= { device_dna[48],
+                            device_dna[40 +: 8],
+                            device_dna[32 +: 8],
+                            device_dna[24 +: 8],
+                            device_dna[16 +: 8],
+                            device_dna[8 +: 8],
+                            device_dna[0 +: 8],
+                            out_port };
        end
     end
     
@@ -356,5 +377,6 @@ module hycontrol_top(
    assign stream_udp_port = stream_udp_port_reg;
    assign stream_ip_address = stream_ip_address_reg;
    assign stream_linked = stream_linked_reg;
-   
+
+   assign device_dna_o = device_dna;   
 endmodule

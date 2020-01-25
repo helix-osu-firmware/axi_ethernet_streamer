@@ -120,7 +120,8 @@ decode_command:
 ; Switch to DHCP. This invalidates static IP
 ; and pulls DHCP out of reset. We don't respond
 ; here because... well... no IP address.
-do_di_response:	
+do_di_response:
+	; 3 byte command + 8 byte DNA = [10:0]
 	compare s7, 0A
 	jump C, main
 	call check_dna
@@ -130,6 +131,7 @@ do_di_response:
 	outputk 00, ip_control
 	jump main
 do_si_response:
+	; 3 byte command + 8 byte DNA + 4 byte IP = [14:0]
 	compare s7, 0E
 	jump C, main
 	call check_dna
@@ -180,23 +182,21 @@ do_id_response_lp1:
 	jump do_response
 
 do_op_response:
-	compare s7, 08
+	; 3 bytes command, 2 bytes port: [4:0]
+	compare s7, 04
 	jump C, main
 	; unlink stream
 	outputk 00, stream_link
-	; grab IP...
-	; iocopy 83 -> 04
-	;        84 -> 05
-	;        85 -> 06
-	;        86 -> 07
-	load s4, 83
-	load s5, stream_ip_3
-	call iocopy4
-	; and grab port
-	; iocopy 87 -> 02
-	;        88 -> 03
-	load s4, 87
-	load s5, stream_udp_1
+	; just write anything to
+	; stream IP, it'll autocopy
+	; the source IP address
+	output s7, stream_ip_3
+	; but we need the destination
+	; port for the stream.
+	; iocopy 83 -> 02
+	;        84 -> 03
+	load   s4, 83
+	load   s5, stream_udp_1
 	call iocopy2
 	; and link stream
 	outputk 01, stream_link
