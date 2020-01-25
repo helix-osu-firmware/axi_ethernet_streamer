@@ -179,10 +179,11 @@ module axi_ethernet_streamer( input clk100,
    wire                    pbaxi4_rlast;
    wire [1:0] 				   pbaxi4_rresp;
 
-   wire [31:0] 				   pbaxi4_wdata;
+   wire [31:0] 			   pbaxi4_wdata;
    wire 				   pbaxi4_wready;
    wire 				   pbaxi4_wvalid;
    wire 				   pbaxi4_wlast;
+   wire [3:0]              pbaxi4_wstrb;
    
    //// PICOBLAZE AXI4-LITE ////
    wire [12:0] 				   pb_araddr;
@@ -209,6 +210,8 @@ module axi_ethernet_streamer( input clk100,
                 .mb_debug_sys_rst(1'b0),
 		       .dcm_locked(locked),
 		       .ext_reset_in(!resetn),
+		       .mb_reset(),
+		       .bus_struct_reset(),
 		       .interconnect_aresetn(interconnect_resetn),
 		       .peripheral_aresetn(peripheral_resetn),
 		       .peripheral_reset(reset_out),
@@ -285,7 +288,7 @@ module axi_ethernet_streamer( input clk100,
 
    aeths_ethlite u_eth( .s_axi_aclk(clk100),
                         .s_axi_aresetn(peripheral_resetn),
-			.s_axi_araddr(eth_araddr),
+			.s_axi_araddr(eth_araddr[12:0]),
 			.s_axi_arready(eth_arready),
 			.s_axi_arvalid(eth_arvalid),
 			// burst/cache/len/size
@@ -294,7 +297,7 @@ module axi_ethernet_streamer( input clk100,
 			.s_axi_arlen(eth_arlen),
 			.s_axi_arsize(eth_arsize),
 			
-			.s_axi_awaddr(eth_awaddr),
+			.s_axi_awaddr(eth_awaddr[12:0]),
 			.s_axi_awready(eth_awready),
 			.s_axi_awvalid(eth_awvalid),
 			// burst/cache/len/size
@@ -421,6 +424,7 @@ module axi_ethernet_streamer( input clk100,
 				    .m_axi_wlast(pbaxi4_wlast),
 				    .m_axi_wready(pbaxi4_wready),
 				    .m_axi_wvalid(pbaxi4_wvalid),
+				    .m_axi_wstrb(pbaxi4_wstrb),
 
 				    .s_axi_araddr(pb_araddr),
 				    .s_axi_arready(pb_arready),
@@ -446,7 +450,59 @@ module axi_ethernet_streamer( input clk100,
 				    .s_axi_wstrb(pb_wstrb),
 				    .s_axi_wvalid(pb_wvalid));
    
+   // axi IDs for echoing
+   wire [3:0] eth_wid;
+   wire [3:0] eth_rid;
+   
    // and now all that's left is the interconnect
+   // Note that Xilinx sucks here. it doesn't matter that we said
+   // that we don't have certain signals. It still wants them.
+   // On the plus side it at least believed us with read/write channels only!
+//   dumb_block_diagram_wrapper u_wrapper(.aresetn(interconnect_resetn),
+//                                        .clk100(clk100),
+//                                        // ethlite connection
+//                                        .eth_araddr(eth_araddr),
+//                                        .eth_arburst(eth_arburst),
+//                                        .eth_arcache(eth_arcache),
+//                                        .eth_arid(eth_rid),
+//                                        .eth_arlen(eth_arlen),
+//                                        .eth_arlock(),
+//                                        .eth_arprot(),
+//                                        .eth_arqos(),
+//                                        .eth_arready(eth_arready),
+//                                        .eth_arregion(),
+//                                        .eth_arsize(eth_arsize),
+//                                        .eth_arvalid(eth_arvalid),
+
+//                                        .eth_awaddr(eth_awaddr),
+//                                        .eth_awburst(eth_awburst),
+//                                        .eth_awcache(eth_awcache),
+//                                        .eth_awid(eth_wid),
+//                                        .eth_awlen(eth_awlen),
+//                                        .eth_awlock(),
+//                                        .eth_awprot(),
+//                                        .eth_awqos(),
+//                                        .eth_awready(eth_awready),
+//                                        .eth_awregion(),
+//                                        .eth_awsize(eth_awsize),
+//                                        .eth_awvalid(eth_awvalid),
+
+//                                        .eth_bid(eth_wid),
+//                                        .eth_bready(eth_bready),
+//                                        .eth_bresp(eth_bresp),
+//                                        .eth_bvalid(eth_bvalid),
+//                                        .eth_rdata(eth_rdata),
+//                                        .eth_rid(eth_rid),
+//                                        .eth_rlast(eth_rlast),
+//                                        .eth_rready(eth_rready),
+//                                        .eth_rresp(eth_rresp),
+//                                        .eth_rvalid(eth_rvalid),
+//                                        .eth_wdata(eth_wdata),
+//                                        .eth_wlast(eth_wlast),
+//                                        .eth_wready(eth_wready),
+//                                        .eth_wstrb(),
+//                                        .eth_wvalid(eth_wvalid),
+   
    aeths_interconnect u_xbar(.INTERCONNECT_ACLK(clk100),
 			     .INTERCONNECT_ARESETN(interconnect_resetn),
 			     .S00_AXI_ACLK(clk100),
@@ -466,6 +522,10 @@ module axi_ethernet_streamer( input clk100,
 			     .S00_AXI_RVALID(axi_dm_mm2s_rvalid),
 			     .S00_AXI_RRESP(axi_dm_mm2s_rresp),
 			     .S00_AXI_RLAST(axi_dm_mm2s_rlast),
+			     
+			     .S00_AXI_AWVALID(1'b0),
+			     .S00_AXI_WVALID(1'b0),
+			     .S00_AXI_BREADY(1'b1),
 			     
 			     .S01_AXI_ACLK(clk100),
 			     .S01_AXI_AWADDR(axi_dm_s2mm_awaddr),
@@ -489,8 +549,11 @@ module axi_ethernet_streamer( input clk100,
 			     .S01_AXI_WVALID(axi_dm_s2mm_wvalid),
 			     .S01_AXI_WSTRB(axi_dm_s2mm_wstrb),
 			     
+			     .S01_AXI_ARVALID(1'b0),
+			     .S01_AXI_RREADY(1'b1),
+			     
 			     .S02_AXI_ACLK(clk100),
-			     .S02_AXI_ARADDR(pbaxi4_araddr),
+			     .S02_AXI_ARADDR({{19{1'b0}},pbaxi4_araddr}),
 			     .S02_AXI_ARREADY(pbaxi4_arready),
 			     .S02_AXI_ARVALID(pbaxi4_arvalid),
 			     .S02_AXI_ARCACHE(pbaxi4_arcache),
@@ -500,7 +563,7 @@ module axi_ethernet_streamer( input clk100,
 			     .S02_AXI_ARLOCK(pbaxi4_arlock),
 			     .S02_AXI_ARPROT(pbaxi4_arprot),
 			     .S02_AXI_ARQOS(pbaxi4_arqos),
-			     .S02_AXI_AWADDR(pbaxi4_awaddr),
+			     .S02_AXI_AWADDR({{19{1'b0}},pbaxi4_awaddr}),
 			     .S02_AXI_AWREADY(pbaxi4_awready),
 			     .S02_AXI_AWVALID(pbaxi4_awvalid),
 			     .S02_AXI_AWCACHE(pbaxi4_awcache),
@@ -510,6 +573,8 @@ module axi_ethernet_streamer( input clk100,
 			     .S02_AXI_AWLOCK(pbaxi4_awlock),
 			     .S02_AXI_AWPROT(pbaxi4_awprot),
 			     .S02_AXI_AWQOS(pbaxi4_awqos),
+			     .S02_AXI_AWID('b0),
+			     .S02_AXI_ARID('b0),
 			     .S02_AXI_BRESP(pbaxi4_bresp),
 			     .S02_AXI_BREADY(pbaxi4_bready),
 			     .S02_AXI_BVALID(pbaxi4_bvalid),
@@ -525,9 +590,6 @@ module axi_ethernet_streamer( input clk100,
 			     .S02_AXI_WSTRB(pbaxi4_wstrb),
 
 			     .M00_AXI_ACLK(clk100),
-			     // kill the ID connections on the return paths (R/B)
-			     .M00_AXI_RID(4'h0),
-			     .M00_AXI_BID(4'h0),
                  // 7 connections
 			     .M00_AXI_ARADDR(eth_araddr),
 			     .M00_AXI_ARREADY(eth_arready),
@@ -536,6 +598,7 @@ module axi_ethernet_streamer( input clk100,
 			     .M00_AXI_ARCACHE(eth_arcache),
 			     .M00_AXI_ARLEN(eth_arlen),
 			     .M00_AXI_ARSIZE(eth_arsize),
+			     .M00_AXI_ARID(eth_rid),
                  // 7 connections
 			     .M00_AXI_AWADDR(eth_awaddr),
 			     .M00_AXI_AWREADY(eth_awready),
@@ -544,16 +607,19 @@ module axi_ethernet_streamer( input clk100,
 			     .M00_AXI_AWCACHE(eth_awcache),
 			     .M00_AXI_AWLEN(eth_awlen),
 			     .M00_AXI_AWSIZE(eth_awsize),
+			     .M00_AXI_AWID(eth_wid),
                  // 3 connections
 			     .M00_AXI_BRESP(eth_bresp),
 			     .M00_AXI_BREADY(eth_bready),
 			     .M00_AXI_BVALID(eth_bvalid),
+			     .M00_AXI_BID(eth_wid),
 			     // 5 connections
 			     .M00_AXI_RDATA(eth_rdata),
 			     .M00_AXI_RRESP(eth_rresp),
 			     .M00_AXI_RREADY(eth_rready),
 			     .M00_AXI_RVALID(eth_rvalid),
 			     .M00_AXI_RLAST(eth_rlast),
+			     .M00_AXI_RID(eth_rid),
 			     // 4 connections
 			     .M00_AXI_WDATA(eth_wdata),
 			     .M00_AXI_WLAST(eth_wlast),
