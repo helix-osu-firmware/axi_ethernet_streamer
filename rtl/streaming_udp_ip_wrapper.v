@@ -34,7 +34,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 
    parameter [47:0] MAC_ADDRESS = {48{1'b0}};   
    
-   parameter DEBUG = "TRUE";
+   parameter DEBUG = "VIO";
 
    reg [31:0] 				 destination_ip = {32{1'b0}};
    reg [15:0] 				 destination_port = {16{1'b0}};
@@ -203,7 +203,6 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [31:0] vio_ip_address;
    wire        vio_ip_force;
    assign      dhcp_reset = (vio_ip_force || hycontrol_dhcp_reset);
-   wire [31:0] ip_address = (dhcp_ip_valid) ? dhcp_ip_address : {32{1'b0}};
 
    dhcp_top #(.MAC_ADDRESS(MAC_ADDRESS)) u_dhcp(.clk(m_axis_aclk),
 						.do_dhcp(do_dhcp || auto_dhcp),
@@ -232,8 +231,11 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [15:0] stream_port;
    
    hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),
-			   .dhcp_reset(hycontrol_dhcp_reset),.dhcp_ip_address(dhcp_ip_address),
-			   .static_ip_address(static_ip_address),.static_ip_valid(static_ip_valid),
+			   .dhcp_reset(hycontrol_dhcp_reset),
+			   .ext_ip_address((vio_ip_force) ? vio_ip_address : dhcp_ip_address),
+			   .ext_ip_force(vio_ip_force),
+			   .static_ip_address(static_ip_address),
+			   .static_ip_valid(static_ip_valid),
 			   // data/valid/last plus start
 			   .udp_in_start(control_in_start),
 			   .udp_in_data(control_in_data),
@@ -303,14 +305,17 @@ module streaming_udp_ip_wrapper( // Ethernet receive
                                     .probe6(udp_rx_data_in_valid),
                                     .probe7(udp_rx_data_in_start),
                                     .probe8(udp_rx_data_in_last),
-                                    .probe9(udp_rx_dst_port));
+                                    .probe9(udp_rx_dst_port),
+                                    .probe10(stream_axis_rx_tdata),
+                                    .probe11(stream_in_valid),
+                                    .probe12(stream_axis_rx_tready));
         end
         if (DEBUG == "TRUE" || DEBUG == "ALL" || DEBUG == "VIO") begin : VIO
             stream_debug_vio u_vio(.clk(m_axis_aclk),
                                     .probe_out0(vio_ip_address),
                                     .probe_out1(vio_ip_force),
                                     .probe_in0(dhcp_ip_valid),
-                                    .probe_in1(ip_address),
+                                    .probe_in1(my_ip_address),
                                     .probe_in2(stream_linked),
                                     .probe_in3(stream_ip_addr),
                                     .probe_in4(stream_port),
@@ -367,8 +372,9 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 				    .udp_rx_src_ip_addr(udp_rx_src_ip_addr),
 				    .udp_rx_is_valid(udp_rx_is_valid));
 
-   assign my_ip_address = (dhcp_reset) ? (vio_ip_force ? vio_ip_address : static_ip_address) : dhcp_ip_address;
-   assign my_ip_valid = (dhcp_reset) ? (vio_ip_force ? 1'b1 : static_ip_valid) : dhcp_ip_valid;   
+   // VIO IP Force overrides DHCP and the static IP assignment.
+   assign my_ip_address = (vio_ip_force) ? vio_ip_address : ((dhcp_reset) ? static_ip_address : dhcp_ip_address);
+   assign my_ip_valid = (vio_ip_force) ? 1'b1 : ((dhcp_reset) ? static_ip_valid : dhcp_ip_valid);
    
 endmodule
 			   
