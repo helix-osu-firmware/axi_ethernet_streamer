@@ -165,6 +165,29 @@ directory, accepting a 16-bit stream input which then
 would be converted to 8-bit via an AXI Width Converter
 core.
 
+# Integrating the AXI Ethernet Streamer
+
+There are two main modules provided here:
+
+* axi_ethernet_streamer.v
+* streaming_udp_ip_wrapper.v
+
+axi_ethernet_streamer provides a pure AXI4-Stream output interface
+with no UDP or IP layer.
+
+streaming_udp_ip_wrapper integrates a UDP/IP core, a DHCP port handler,
+the HY port handler, and the HX port handler.
+
+The two modules should be connected together (streaming_udp_ip_wrapper's
+m_axis_tx -> axi_ethernet_streamer's s_axis_eth_tx_ , and likewise
+for the rx path).
+
+## Helper modules
+
+A full wrapper integrating to a HELIX-style AXI4-Stream is located
+in helper/ along with the IP used there (arty_eth_wrap.v). An additional
+adapter may be needed if the MAC interface does not use MII.
+
 # Software
 
 Simple interface software is located under software/, with
