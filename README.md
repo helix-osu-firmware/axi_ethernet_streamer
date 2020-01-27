@@ -165,6 +165,12 @@ directory, accepting a 16-bit stream input which then
 would be converted to 8-bit via an AXI Width Converter
 core.
 
+# Software
+
+Simple interface software is located under software/, with
+functions in hxlib.c for generic communication, and an
+example (showing HELIX control packets) in hxeth.c.
+
 # UDP/IP Core
 
 This module uses the UDP/IP core from OpenCores:
