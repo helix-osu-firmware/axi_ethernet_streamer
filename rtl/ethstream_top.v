@@ -32,44 +32,70 @@ module ethstream_top( input clk,
 		      output 	    s_axis_tready,
 		      input 	    s_axis_tlast
 		      );
+		      
+   parameter DEBUG = "FALSE";
 
-   // this is actually a pretty darn easy state machine
+    localparam [1:0] UDPTX_RESULT_NONE = 2'b00;
+    localparam [1:0] UDPTX_RESULT_SENDING = 2'b01;
+    localparam [1:0] UDPTX_RESULT_SENT = 2'b11;
+    localparam [1:0] UDPTX_RESULT_ERR = 2'b10;
+
+   // this is actually a pretty darn easy state machine,
+   // and yet I still managed to screw it up. yay me.
    reg [15:0] 			    udp_length = {16{1'b0}};
    localparam FSM_BITS = 3;
    localparam [FSM_BITS-1:0] IDLE = 0;
-   localparam [FSM_BITS-1:0] LSB_LENGTH = 1;
-   localparam [FSM_BITS-1:0] MSB_LENGTH = 2;
-   localparam [FSM_BITS-1:0] REQUEST = 3;
-   localparam [FSM_BITS-1:0] STREAM = 4;   
-   localparam [FSM_BITS-1:0] FINISH = 5;   
+   localparam [FSM_BITS-1:0] MSB_LENGTH = 1;
+   localparam [FSM_BITS-1:0] REQUEST = 2;
+   localparam [FSM_BITS-1:0] STREAM = 3;   
+   localparam [FSM_BITS-1:0] FINISH = 4;   
    reg [FSM_BITS-1:0] 		    state = IDLE;
+
+   reg udp_out_start_reg = 0;
 
    always @(posedge clk) begin
       if (reset) state <= IDLE;      
       case (state)
-        IDLE: if (s_axis_tvalid && stream_linked) state <= LSB_LENGTH;
-        LSB_LENGTH: if (s_axis_tvalid) state <= MSB_LENGTH;
+        IDLE: if (s_axis_tvalid && stream_linked) state <= MSB_LENGTH;
         MSB_LENGTH: if (s_axis_tvalid) state <= REQUEST;
         REQUEST: state <= STREAM;
         STREAM: if (s_axis_tlast && s_axis_tvalid && s_axis_tready) state <= FINISH;
-        FINISH: if (udp_out_result == 2'b01) state <= IDLE;
+        FINISH: state <= IDLE;
       endcase // case (state)
 
-      if (state == LSB_LENGTH && s_axis_tvalid) udp_length[0 +: 8] <= s_axis_tdata;
+      if (state == IDLE && s_axis_tvalid) udp_length[0 +: 8] <= s_axis_tdata;
       if (state == MSB_LENGTH && s_axis_tvalid) udp_length[8 +: 8] <= s_axis_tdata;      
+      
+      // Start goes high when we set the request, and then it clears when we actually get the indication
+      // that we're sending. That happens a bit later, but we don't want to hold it through the end.
+      if (state == REQUEST) udp_out_start_reg <= 1;
+      else if (udp_out_result == UDPTX_RESULT_SENDING) udp_out_start_reg <= 0;
    end // always @ (posedge clk)
 
    assign udp_out_length = udp_length;
    assign udp_out_dst_ip_addr = stream_ip_addr;
    assign udp_out_dst_port = stream_port;
-   assign udp_out_start = (state == REQUEST || state == STREAM || state == FINISH);
+   assign udp_out_start = udp_out_start_reg;
    assign udp_out_valid = (state == STREAM) && s_axis_tvalid;
-   assign s_axis_tready = (state == LSB_LENGTH || state == MSB_LENGTH 
+   assign s_axis_tready = (state == IDLE || state == MSB_LENGTH 
 			   || (state == STREAM && udp_out_ready));
    assign udp_out_last = (s_axis_tlast && state == STREAM);
    assign udp_out_data = s_axis_tdata;
 
-   // The inbound path is just buffered via a FIFO.
+   generate
+        if (DEBUG == "TRUE") begin : DBG
+            ethstream_tx_debug ila(.clk(clk),
+                                   .probe0(s_axis_tdata),
+                                   .probe1(s_axis_tvalid),
+                                   .probe2(s_axis_tready),
+                                   .probe3(s_axis_tlast),
+                                   .probe4(state),
+                                   .probe5(udp_out_last),
+                                   .probe6(udp_out_ready));
+        end
+   endgenerate
+   
+   // The inbound path is just buffered via a FIFO. 
    ethstream_rx_fifo u_rxfifo(.s_aclk(clk),
 			      .s_aresetn(stream_linked),
 			      .s_axis_tdata(udp_in_data),
