@@ -17,6 +17,7 @@ void helix_send_control_packet(ip_path_t *path,
 ip_fpga_t found_fpgas[MAX_FPGAS];
 
 int main() {
+  unsigned char *rxbuf;
   ip_path_t hz;
   ip_path_t hw;
   int n,len,nfound;
@@ -24,6 +25,8 @@ int main() {
   initialize_hz_path(&hz);
   initialize_hw_path(&hw);
 
+  rxbuf = (unsigned char *) malloc(sizeof(unsigned char)*2048);
+  
   // perform discovery procedure
   printf("Discovering... ");
   nfound = discover_fpgas(&hz, found_fpgas, MAX_FPGAS);
@@ -47,12 +50,22 @@ int main() {
 			    0x123456,
 			    0x789A);
 
-  sleep(5);
+  // and watch for a response. Note that the only reason I'm getting
+  // a response to a no-op here is with test firmware which loops
+  // packets around.
+  // Again, HW path. No FPGA specified, we need to deal with that
+  // in get_response better later.
+  // Timeout is in microseconds here.
+  n = hxlib_get_response(&hw, rxbuf, 2048, 5000);
+  printf("got %d bytes\n", n);
   
   // close the stream link on FPGA #0
+  // note that we're back to the hz socket, since this is a control
+  // operation.
   stream_close(&hz, &found_fpgas[0]);
   
  close_sockets:
+  free(rxbuf);
   close_path(&hz);
   close_path(&hw);
   return 0;
