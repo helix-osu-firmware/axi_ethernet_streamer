@@ -25,7 +25,10 @@ module hycontrol_top(
         // The "DI" command deassigns a static IP address, and asserts/deasserts the DHCP reset
         // so that the DHCP process takes over.
         // Note that both of these are qualified by the device DNA.
-        input [31:0]  dhcp_ip_address,
+        // If ext_ip_force is high, the external IP overrides any internal static.
+        // This is for when a VIO sets it.
+        input [31:0]  ext_ip_address,
+        input         ext_ip_force,
         output 	      dhcp_reset,
         output [31:0] static_ip_address,
         output 	      static_ip_valid, 
@@ -41,10 +44,18 @@ module hycontrol_top(
         input 	      second
     );
 
-    reg [56:0] device_dna = {57{1'b0}};        
+    parameter DEBUG = "FALSE";
 
+    reg [56:0] device_dna = {57{1'b0}};        
+    // This is the storage for any IP address received by PicoBlaze.
     reg [31:0] my_ip_address = {32{1'b0}};
+    // This is the storage when PicoBlaze reads in the IP address. It either comes from
+    // the value written before, or the ext_ip_address.
+    reg [7:0] ip_addr_byte = {8{1'b0}};
+    // Determines whether or not the IP address we send back is our static IP or the external IP.
+    // This can be overridden using the ext_ip_force.
     reg use_static_ip = 0;
+    // Indicates whether or not the IP is valid.
     reg static_ip_valid_reg = 0;
     
     wire [7:0] ip_control_register = {{6{1'b0}}, static_ip_valid, use_static_ip};
@@ -201,22 +212,14 @@ module hycontrol_top(
         if (port_id[7]) inport_mux <= bram_read_data[7:0]; // 80-9F
         else if (port_id[6]) inport_mux <= dna_register;   // 40
         else if (port_id[5] == 0) begin                    // 01 and 03
-            if (port_id[2]) inport_mux <= transmit_packet_length;
+            if (port_id[1]) inport_mux <= transmit_packet_length;
             else inport_mux <= packet_control;
         end else begin                                     // 30-33
-            case(port_id[1:0])
-                2'b00: inport_mux <= my_ip_address[24 +: 8];
-                2'b01: inport_mux <= my_ip_address[16 +: 8];
-                2'b10: inport_mux <= my_ip_address[8 +: 8];
-                2'b11: inport_mux <= my_ip_address[0 +: 8];
-            endcase
+            inport_mux <= ip_addr_byte;
         end
     end
     assign in_port = inport_mux;
-            
-                    
-    
-
+                                
     integer ip_i;
     always @(posedge clk) begin : IP_ADDRESS_LOGIC
         ip_control_access <= (k_port_id & ip_control_mask) == ip_control_addr;
@@ -231,9 +234,14 @@ module hycontrol_top(
         for (ip_i=0;ip_i<4;ip_i=ip_i+1) begin : IP_BYTE_DECODE_LOGIC
             // Big endian ordering. Swap it around, so 0 -> 3, 1->2, 2->1, 3->0.
             ip_address_access[ip_i] <= (((port_id & my_ip_mask) == my_ip_addr) && (port_id[1:0] == 3-ip_i));
-            if (!use_static_ip) my_ip_address[8*ip_i +: 8] <= dhcp_ip_address[8*ip_i +: 8];
-            else if (ip_address_access[ip_i] && write_strobe) my_ip_address[8*ip_i +: 8] <= out_port;
+            if (ip_address_access[ip_i] && write_strobe) my_ip_address[8*ip_i +: 8] <= out_port;
         end
+        case(port_id[1:0])
+            2'b00: ip_addr_byte <= (!use_static_ip || ext_ip_force) ? ext_ip_address[24 +: 8] : my_ip_address[24 +: 8];
+            2'b01: ip_addr_byte <= (!use_static_ip || ext_ip_force) ? ext_ip_address[16 +: 8] : my_ip_address[16 +: 8];
+            2'b10: ip_addr_byte <= (!use_static_ip || ext_ip_force) ? ext_ip_address[8 +: 8] : my_ip_address[8 +: 8];
+            2'b11: ip_addr_byte <= (!use_static_ip || ext_ip_force) ? ext_ip_address[0 +: 8] : my_ip_address[0 +: 8];
+        endcase
     end                    
 
     always @(posedge clk) begin        
@@ -321,7 +329,7 @@ module hycontrol_top(
 //            endcase // case (port_id[1:0])
        end
        if (reset) stream_linked_reg <= 1'b0;
-       else if ((k_write_strobe || write_strobe) && ((port_id & stream_link_mask) == stream_link_addr) ) begin
+       else if ((k_write_strobe || write_strobe) && ((k_port_id & stream_link_mask) == stream_link_addr) ) begin
            stream_linked_reg <= out_port[0];
        end
 
@@ -339,6 +347,13 @@ module hycontrol_top(
        end
     end
     
+    generate
+        if (DEBUG == "TRUE") begin : PBILA
+            // this is the minimal information needed for debugging a PicoBlaze, mostly. Sleep/interrupt would help but you can
+            // basically figure that out from address.
+            picoblaze_ila pb_ila(.clk(clk),.probe0(address),.probe1(inout_port),.probe2(port_id),.probe3(packet_byte_address),.probe4(transmit_packet_length),.probe5(udp_in_last && udp_in_valid));
+        end
+    endgenerate
     assign udp_out_valid = (transmitting_packet_data_valid);
     assign udp_out_last = (packet_byte_address == transmit_packet_length) && transmitting_packet;
     assign udp_out_data = (bram_read_data);
