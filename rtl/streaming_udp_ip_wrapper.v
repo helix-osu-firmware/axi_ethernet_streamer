@@ -34,7 +34,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 
    parameter [47:0] MAC_ADDRESS = {48{1'b0}};   
    
-   parameter DEBUG = "VIO";
+   parameter DEBUG = "TRUE";
 
    reg [31:0] 				 destination_ip = {32{1'b0}};
    reg [15:0] 				 destination_port = {16{1'b0}};
@@ -127,7 +127,6 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [15:0] 				 stream_out_dst_port;
    wire [15:0] 				 stream_out_src_port = 18520;
    wire [31:0] 				 stream_out_dst_ip_addr;
-   wire 				 stream_start;
    wire [1:0] 				 stream_ready;
    // out has data/last/valid/ready (AXI-Stream type), plus start/grant/result
    wire 				 stream_out_last;
@@ -295,6 +294,10 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 
     generate
         if (DEBUG == "TRUE" || DEBUG == "ALL" || DEBUG == "ILA") begin : ILA
+            // The VIO's pretty useful all the time and it's a lightweight core.
+            // The ILA's not that useful once things are working, so we allow them to be enabled separately.
+            wire [2:0] udp_start = { dhcp_out_start, control_out_start, stream_out_start };
+            wire [2:0] udp_grant = { dhcp_out_grant, control_out_grant, stream_out_grant };
             stream_debug_ila u_ila(.clk(m_axis_aclk),
                                     .probe0(udp_tx_data_out),
                                     .probe1(udp_tx_data_out_valid),
@@ -308,7 +311,10 @@ module streaming_udp_ip_wrapper( // Ethernet receive
                                     .probe9(udp_rx_dst_port),
                                     .probe10(stream_axis_rx_tdata),
                                     .probe11(stream_in_valid),
-                                    .probe12(stream_axis_rx_tready));
+                                    .probe12(stream_axis_rx_tready),
+                                    .probe13(udp_start),
+                                    .probe14(udp_grant),
+                                    .probe15(udp_tx_result));
         end
         if (DEBUG == "TRUE" || DEBUG == "ALL" || DEBUG == "VIO") begin : VIO
             stream_debug_vio u_vio(.clk(m_axis_aclk),
