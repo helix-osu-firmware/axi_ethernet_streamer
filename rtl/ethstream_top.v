@@ -71,7 +71,7 @@ module ethstream_top( input clk,
 
    // The inbound path is just buffered via a FIFO.
    ethstream_rx_fifo u_rxfifo(.s_aclk(clk),
-			      .s_aresetn(!stream_linked),
+			      .s_aresetn(stream_linked),
 			      .s_axis_tdata(udp_in_data),
 			      .s_axis_tvalid(udp_in_valid),			      
 			      .s_axis_tready(), // if we overflow the buffer, it's just lost
