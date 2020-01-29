@@ -2,6 +2,9 @@
 #include <stdlib.h> 
 #include <unistd.h> 
 #include <string.h> 
+#include <sys/select.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "hxlib.h"
 
