@@ -14,6 +14,14 @@ hardware is easy (outbound IP = router if
 (dest IP & subnet mask != my IP & subnet mask)),
 I just haven't done it yet.
 
+# TL;DR (too long, didn't read)
+
+* `cd software; make`
+* Plug the thing into a network with a DHCP server that you're connected to directly.
+* Wait like, 3 seconds or something
+* `hxeth`
+
+
 # Setting the device IP
 
 There are 3 ways to set the device IP.
