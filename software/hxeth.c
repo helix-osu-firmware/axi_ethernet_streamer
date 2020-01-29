@@ -8,11 +8,21 @@
 
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
+#define TYPE_NOP 0x00
+#define TYPE_WRITE 0x01
+#define TYPE_READ 0x10
+#define TYPE_UPDATE 0x11
 void helix_send_control_packet(ip_path_t *path,
 			       ip_fpga_t *fpga,
 			       uint8_t type,
 			       uint32_t address,
 			       uint16_t data);
+// reading means:
+// send control packet with TYPE_READ (helix_send_control_packet(..))
+// get response (n = hxlib_get_response(&hw, rxbuf, 4, 5000))
+// parse control packet (val = helix_parse_status_packet(rxbuf))
+
+uint16_t helix_parse_status_packet(uint8_t *buf);
 
 ip_fpga_t found_fpgas[MAX_FPGAS];
 
@@ -44,20 +54,21 @@ int main() {
   // open the stream link on FPGA #0
   stream_open(&hz, &found_fpgas[0]);
 
+  // technically we should like, send a reset or something here,
+  // I dunno.
+  
   // note the switch to the HW socket - that's the stream socket
   helix_send_control_packet(&hw, &found_fpgas[0], 
-			    0, // no-op, for fun
-			    0x123456,
-			    0x789A);
-
-  // and watch for a response. Note that the only reason I'm getting
-  // a response to a no-op here is with test firmware which loops
-  // packets around.
-  // Again, HW path. No FPGA specified, we need to deal with that
-  // in get_response better later.
-  // Timeout is in microseconds here.
+			    TYPE_READ, // no-op, for fun
+			    0x0,
+			    0x0);
+  // and watch for a response.
   n = hxlib_get_response(&hw, rxbuf, 2048, 5000);
-  printf("got %d bytes\n", n);
+  // this should be 4 bytes unless the FPGA's already set up and
+  // streaming crap out.
+  printf("Received %d bytes\n", n);
+  if (n >= 4) printf("Trying to parse status read: %2.2x\n",
+		     helix_parse_status_packet(rxbuf));
   
   // close the stream link on FPGA #0
   // note that we're back to the hz socket, since this is a control
@@ -94,4 +105,34 @@ void helix_send_control_packet(ip_path_t *hw,
   buf[6] = 0x8 | ((data & 0xF)<<4);
   buf[7] = (data & 0xFF0)>>4;
   hxlib_send_packet(hw, buf, 8, fpga);
+}
+
+uint16_t helix_parse_status_packet(uint8_t *buf) {
+  uint16_t header;
+  uint16_t ctrl_word1;
+  uint16_t ctrl_word2;
+  uint16_t ctrl_word3;
+  uint16_t data;
+
+  // byte ordering is LITTLE ENDIAN, not network byte order
+  header = (buf[1] << 8) | buf[0];
+  ctrl_word1 = (buf[3] << 8) | buf[2];
+  ctrl_word2 = (buf[5] << 8) | buf[4];
+  ctrl_word3 = (buf[6] << 8) | buf[7];
+  
+  if (header != 0x57A7) {
+    fprintf(stderr, "error, header %4.4x not 57A7\n", header);
+    return 0xFFFF;
+  }
+  if ((ctrl_word1 & 0xF000) != 0xF000) {
+    fprintf(stderr, "error, SOF %1.1x not 0xF\n", (ctrl_word1 >> 12) & 0xF);
+    return 0xFFFF;
+  }
+  if ((ctrl_word3 & 0x000F) != 0x0008) {
+    fprintf(stderr, "error, EOF %1.1x not 0x8\n", ctrl_word3 & 0xF);
+    return 0xFFFF;
+  }
+  // sigh
+  data = ((ctrl_word2 & 0xF) << 12) | ((ctrl_word3 & 0xFFF0)>>4);
+  return data;
 }
