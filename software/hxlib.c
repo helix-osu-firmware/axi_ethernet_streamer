@@ -8,6 +8,14 @@
 
 #include "hxlib.h"
 
+// ha, see manpage on IP
+struct in_pktinfo {
+  unsigned int   ipi_ifindex;  /* Interface index */
+  struct in_addr ipi_spec_dst; /* Local address */
+  struct in_addr ipi_addr;     /* Header Destination
+				  address */
+};
+
 // These two need to match the FPGA's
 // port handlers.
 #define STREAM_OUT_PORT 18520 // 'HX'
@@ -256,7 +264,7 @@ int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
 	if (txbuf[0] == 'I' && txbuf[1] == 'D' && !txbuf[2]) {
 	  for (cmsg=CMSG_FIRSTHDR(&message);
 	       cmsg!= NULL;
-	       cmsg = CMSG_NXTHDR(&message, &cmsg)) {
+	       cmsg = CMSG_NXTHDR(&message, cmsg)) {
 	    if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
 	      ifindex = ((struct in_pktinfo*)CMSG_DATA(cmsg))->ipi_ifindex;
 	      found[nfound].ifindex = ifindex;
