@@ -15,7 +15,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   output 	 m_axis_tx_tvalid,
 			   output 	 m_axis_tx_tlast,
 
-               output [57:0] device_dna,
+               output [56:0] device_dna,
 			   output [31:0] my_ip_address,
 			   output 	 my_ip_valid,
 			   input 	 do_dhcp,
