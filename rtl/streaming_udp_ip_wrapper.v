@@ -360,6 +360,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 				    .udp_tx_dst_port(udp_tx_dst_port),
 				    .udp_tx_src_port(udp_tx_src_port),
 				    .udp_tx_data_length(udp_tx_length),
+				    .udp_tx_checksum('b0),
 
 				    .udp_tx_start(udp_tx_start),
 				    .udp_tx_result(udp_tx_result),
