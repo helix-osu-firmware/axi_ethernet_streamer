@@ -180,7 +180,8 @@ module hycontrol_top(
     // packet_ip[23:16]  21 0010_xx01
     // packet_ip[15:8]   22 0010_xx10
     // packet_ip[7:0]    23 0010_xx11
-    localparam [7:0] my_ip_mask = 8'b1111_0011;
+    // bottom two bits are for selection
+    localparam [7:0] my_ip_mask = 8'b1111_0000;
     localparam [7:0] my_ip_addr = 8'b0011_0000;
     // my_ip[31:24]      30 0011_xx00
     // my_ip[23:16]      31 0011_xx01
