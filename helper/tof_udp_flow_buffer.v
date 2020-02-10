@@ -94,21 +94,19 @@ module tof_udp_flow_buffer( input         s_axis_aclk,
         
         s_capture_length <= (s_axis_tready && s_axis_tvalid && s_axis_tlast);
     end
-    udp_flow_buffer u_flow( .s_aclk(s_axis_aclk),
-                            .s_aresetn(s_axis_aresetn),
-                            .wr_rst_busy(),.rd_rst_busy(),
-                            .s_axis_tdata(flow_tdata),
-                            .s_axis_tready(flow_tready),
-                            .s_axis_tvalid(flow_tvalid),
-                            .s_axis_tlast(flow_tlast),
-                            .s_axis_tuser(flow_tuser),
-
-                            .m_aclk(m_axis_aclk),
-                            .m_axis_tdata(flowout_tdata),
-                            .m_axis_tready(flowout_tready),
-                            .m_axis_tvalid(flowout_tvalid),
-                            .m_axis_tlast(flowout_tlast),
-                            .m_axis_tuser(flowout_tuser));
+    wire udp_flow_read = flowout_tvalid && flowout_tready;
+    wire udp_flow_full;
+    assign flow_tready = !udp_flow_full;
+    wire udp_flow_write = flow_tready && flow_tvalid;
+    udp_flow_buffer u_flow( .wr_clk(s_axis_aclk),
+                            .rst(!s_axis_aresetn),
+                            .din({flow_tuser,flow_tlast,flow_tdata}),
+                            .full(udp_flow_full),
+                            .wr_en(udp_flow_write),
+                            .dout({flowout_tuser,flowout_tlast,flowout_tdata}),
+                            .valid(flowout_tvalid),
+                            .rd_en(udp_flow_read),
+                            .rd_clk(m_axis_aclk));
     udp_length_buffer u_length( .s_aclk(s_axis_aclk),
                                 .s_aresetn(s_axis_aresetn),
                                 .wr_rst_busy(),.rd_rst_busy(),
