@@ -14,7 +14,8 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   input 	 m_axis_tx_tready,
 			   output 	 m_axis_tx_tvalid,
 			   output 	 m_axis_tx_tlast,
-
+                
+               input [47:0] mac_address,
                output [56:0] device_dna,
 			   output [31:0] my_ip_address,
 			   output 	 my_ip_valid,
@@ -31,8 +32,6 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   input 	 stream_axis_tx_tvalid,
 			   output 	 stream_axis_tx_tready,
 			   input 	 stream_axis_tx_tlast );
-
-   parameter [47:0] MAC_ADDRESS = {48{1'b0}};   
    
    parameter DEBUG = "TRUE";
 
@@ -203,7 +202,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire        vio_ip_force;
    assign      dhcp_reset = (vio_ip_force || hycontrol_dhcp_reset);
 
-   dhcp_top #(.MAC_ADDRESS(MAC_ADDRESS)) u_dhcp(.clk(m_axis_aclk),
+   dhcp_top u_dhcp(.clk(m_axis_aclk),
 						.do_dhcp(do_dhcp || auto_dhcp),
 						.reset(!m_axis_aresetn || dhcp_reset ),
 						.second(second_timer),
@@ -222,6 +221,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 						.udp_out_start(dhcp_out_start),	
 						.udp_out_dst_ip_addr(dhcp_out_dst_ip_addr),
 						.udp_out_dst_port(dhcp_out_dst_port),
+						.mac_address(mac_address),
 						.ip_address(dhcp_ip_address),
 						.ip_address_valid(dhcp_ip_valid));
    wire [31:0] static_ip_address;
@@ -345,7 +345,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 				    .mac_rx_tlast(s_axis_rx_tlast),
 
 				    .our_ip_address(my_ip_address),
-				    .our_mac_address(MAC_ADDRESS),
+				    .our_mac_address(mac_address),
 				    .arp_pkt_count(arp_packet_count),
 				    .ip_pkt_count(ip_packet_count),
 

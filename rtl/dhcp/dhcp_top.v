@@ -15,6 +15,7 @@ module dhcp_top(
     input [1:0] udp_out_result,
     output udp_out_start,
     
+    input [47:0] mac_address,
     output [31:0] ip_address,
     output ip_address_valid,
     
@@ -195,9 +196,7 @@ module dhcp_top(
     
     assign udp_out_dst_ip_addr = 32'hFFFFFFFF;
     assign udp_out_dst_port = 16'd67;
-    
-    parameter MAC_ADDRESS = {48{1'b0}};
-    
+        
     function [7:0] get_mac_byte;
         input integer inbyte;
         input [47:0] mac;
@@ -215,12 +214,12 @@ module dhcp_top(
     assign picoblaze_control_registers[5] = my_ip[8 +: 8];    
     assign picoblaze_control_registers[6] = my_ip[16 +: 8];
     assign picoblaze_control_registers[7] = my_ip[24 +: 8];
-    assign picoblaze_control_registers[8] = get_mac_byte(0, MAC_ADDRESS);
-    assign picoblaze_control_registers[9] = get_mac_byte(1, MAC_ADDRESS);
-    assign picoblaze_control_registers[10] = get_mac_byte(2, MAC_ADDRESS);
-    assign picoblaze_control_registers[11] = get_mac_byte(3, MAC_ADDRESS);
-    assign picoblaze_control_registers[12] = get_mac_byte(4, MAC_ADDRESS);
-    assign picoblaze_control_registers[13] = get_mac_byte(5, MAC_ADDRESS);
+    assign picoblaze_control_registers[8] = get_mac_byte(0,  mac_address);
+    assign picoblaze_control_registers[9] = get_mac_byte(1,  mac_address);
+    assign picoblaze_control_registers[10] = get_mac_byte(2, mac_address);
+    assign picoblaze_control_registers[11] = get_mac_byte(3, mac_address);
+    assign picoblaze_control_registers[12] = get_mac_byte(4, mac_address);
+    assign picoblaze_control_registers[13] = get_mac_byte(5, mac_address);
     assign picoblaze_control_registers[14] = picoblaze_control_registers[10]; // simplify decode to 1x10
     assign picoblaze_control_registers[15] = picoblaze_control_registers[11]; // simplify decode to 1x11
     assign picoblaze_control_registers[16] = transaction_id[0 +: 8];
