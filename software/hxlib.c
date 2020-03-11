@@ -156,7 +156,9 @@ int broadcast_id(ip_path_t *path) {
   // send a broadcast message 
   cliaddr.sin_family = AF_INET;
   cliaddr.sin_port = htons(OUT_PORT);
-  cliaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+  // TEMPORARY HACK
+  cliaddr.sin_addr.s_addr = inet_addr("192.168.1.255");
+  //cliaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
   rxbuf[0] = 'I';
   rxbuf[1] = 'D';
   rxbuf[2] = 0;
@@ -220,6 +222,12 @@ int stream_open(ip_path_t *path, ip_fpga_t *fpga) {
 // a packet was sent to, because an earlier version of OP
 // required the IP address of the stream partner. I got rid
 // of that because there's no way to do it OS-independently.
+
+// We now take the address to broadcast to, and the main function
+// needs to iterate over them.
+// It appears the best way to do that is to use getifaddrs
+// and look for IFF_RUNNING | IFF_UP | IFF_BROADCAST as well as
+// sin_family = 2.
 int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
   struct timeval timeout;
   socklen_t slen;  
@@ -239,7 +247,7 @@ int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
       exit(1);      
     }
     if (FD_ISSET(sockfd, &readfds)) {
-      char txbuf[16];
+      uint8_t txbuf[16];
       char cbuf[512];
       
       struct sockaddr_in cliaddr;
