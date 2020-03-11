@@ -39,7 +39,7 @@ int main() {
   
   // perform discovery procedure
   printf("Discovering... ");
-  nfound = discover_all_fpgas(&hz, found_fpgas, MAX_FPGAS);
+  nfound = discover_fpgas(&hz, found_fpgas, MAX_FPGAS);
   printf("found %d FPGA", nfound);  
   if (nfound>1) printf("s");
   printf(".\n");

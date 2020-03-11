@@ -219,7 +219,7 @@ int stream_open(ip_path_t *path, ip_fpga_t *fpga) {
 // and look for IFF_RUNNING | IFF_UP | IFF_BROADCAST as well as
 // sin_family = 2.
 
-int discover_all_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max) {
+int discover_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max) {
   int total;
   struct ifaddrs *ifap;
   total = 0;
@@ -239,7 +239,7 @@ int discover_all_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max) {
 	  (IFF_RUNNING | IFF_UP | IFF_BROADCAST) &&
 	  (sap->sin_family == AF_INET)) {
 	printf("trying address %s\n", inet_ntoa(bap->sin_addr));
-	foundhere = discover_fpgas(bap->sin_addr.s_addr,
+	foundhere = discover_fpgas_at_addr(bap->sin_addr.s_addr,
 				   hzpath, found+total, max-total);
 	if (foundhere != 0) {
 	  printf("found %d FPGAs with address %s\n",
@@ -258,7 +258,7 @@ int discover_all_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max) {
 			
 // We now take the address to broadcast to. Use discover_all_fpgas
 // to find any on any interface
-int discover_fpgas(in_addr_t bcast_addr,
+int discover_fpgas_at_addr(in_addr_t bcast_addr,
 		   ip_path_t *hzpath, ip_fpga_t *found, int max) {
   struct timeval timeout;
   socklen_t slen;  
