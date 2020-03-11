@@ -5,16 +5,9 @@
 #include <sys/select.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <ifaddrs.h>
 
 #include "hxlib.h"
-
-// ha, see manpage on IP
-struct in_pktinfo {
-  unsigned int   ipi_ifindex;  /* Interface index */
-  struct in_addr ipi_spec_dst; /* Local address */
-  struct in_addr ipi_addr;     /* Header Destination
-				  address */
-};
 
 // These two need to match the FPGA's
 // port handlers.
@@ -102,7 +95,6 @@ int bind_hw(int sockfd) {
     perror("bind failed");
     exit(EXIT_FAILURE);
   }
-  printf("done\n");
   return 0;
 }
 
@@ -144,11 +136,10 @@ int bind_hz(int sockfd) {
     perror("bind failed");
     exit(EXIT_FAILURE);
   }
-  printf("done\n");
   return 0;
 }
 
-int broadcast_id(ip_path_t *path) {
+int broadcast_id(ip_path_t *path, in_addr_t bcast_addr) {
   struct sockaddr_in cliaddr;
   char rxbuf[3];
 
@@ -156,7 +147,9 @@ int broadcast_id(ip_path_t *path) {
   // send a broadcast message 
   cliaddr.sin_family = AF_INET;
   cliaddr.sin_port = htons(OUT_PORT);
-  cliaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+  // TEMPORARY HACK
+  cliaddr.sin_addr.s_addr = bcast_addr;
+  //cliaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
   rxbuf[0] = 'I';
   rxbuf[1] = 'D';
   rxbuf[2] = 0;
@@ -220,13 +213,59 @@ int stream_open(ip_path_t *path, ip_fpga_t *fpga) {
 // a packet was sent to, because an earlier version of OP
 // required the IP address of the stream partner. I got rid
 // of that because there's no way to do it OS-independently.
-int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
+
+// needs to iterate over them.
+// It appears the best way to do that is to use getifaddrs
+// and look for IFF_RUNNING | IFF_UP | IFF_BROADCAST as well as
+// sin_family = 2.
+
+int discover_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max) {
+  int total;
+  struct ifaddrs *ifap;
+  total = 0;
+  if (getifaddrs(&ifap) == 0) {
+    struct ifaddrs *p = ifap;
+    while (p) {
+      struct sockaddr_in *sap;
+      struct in_addr *ap;
+      struct sockaddr_in *bap;
+      int foundhere;
+
+      foundhere = 0;
+      sap = (struct sockaddr_in *) p->ifa_addr;
+      ap = &sap->sin_addr;
+      bap = (struct sockaddr_in *) p->ifa_broadaddr;
+      if ((p->ifa_flags & (IFF_RUNNING | IFF_UP | IFF_BROADCAST)) ==
+	  (IFF_RUNNING | IFF_UP | IFF_BROADCAST) &&
+	  (sap->sin_family == AF_INET)) {
+	printf("trying address %s\n", inet_ntoa(bap->sin_addr));
+	foundhere = discover_fpgas_at_addr(bap->sin_addr.s_addr,
+				   hzpath, found+total, max-total);
+	if (foundhere != 0) {
+	  printf("found %d FPGAs with address %s\n",
+		 inet_ntoa(bap->sin_addr));
+	  total += foundhere;
+	}	
+      }
+      p = p->ifa_next;
+    }
+    return total;
+  } else {
+    perror("getifaddrs():");
+    return 0;
+  }
+}
+			
+// We now take the address to broadcast to. Use discover_all_fpgas
+// to find any on any interface
+int discover_fpgas_at_addr(in_addr_t bcast_addr,
+		   ip_path_t *hzpath, ip_fpga_t *found, int max) {
   struct timeval timeout;
   socklen_t slen;  
   fd_set readfds, masterfds;
   int nfound = 0;
-  int sockfd = path->sockfd;
-  broadcast_id(path);
+  int sockfd = hzpath->sockfd;
+  broadcast_id(hzpath, bcast_addr);
 
   FD_ZERO(&masterfds);
   FD_SET(sockfd, &masterfds);
@@ -239,7 +278,7 @@ int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
       exit(1);      
     }
     if (FD_ISSET(sockfd, &readfds)) {
-      char txbuf[16];
+      uint8_t txbuf[16];
       char cbuf[512];
       
       struct sockaddr_in cliaddr;
@@ -262,6 +301,9 @@ int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
       rn = recvmsg(sockfd, &message, 0);
       if (rn == 15) {
 	if (txbuf[0] == 'I' && txbuf[1] == 'D' && !txbuf[2]) {
+	  // Drop the entire attempt of finding out which interface
+	  // it came on.
+	  /*
 	  for (cmsg=CMSG_FIRSTHDR(&message);
 	       cmsg!= NULL;
 	       cmsg = CMSG_NXTHDR(&message, cmsg)) {
@@ -270,6 +312,9 @@ int discover_fpgas(ip_path_t *path, ip_fpga_t *found, int max) {
 	      found[nfound].ifindex = ifindex;
 	    }
 	  }
+	  */
+	  // just fill it with zero
+	  found[nfound].ifindex = 0;
 	  uint32_t tmp;
 	  // this is an ID packet
 	  // extract the device DNA

@@ -1,10 +1,14 @@
 #ifndef HXLIB_H
 #define HXLIB_H
 
+// oh I have no idea
+#define __USE_MISC
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <ifaddrs.h>
 #include <sys/types.h> 
 #include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <netinet/in.h>
 
 // combined socket/port
 typedef struct ip_path {
@@ -28,11 +32,15 @@ int initialize_hw_path(ip_path_t *path);
 
 void close_path(ip_path_t *path);
 
-// Broadcast an ID packet (via HZ path)
-int broadcast_id(ip_path_t *hzpath);
+// Broadcast an ID packet (via HZ path) to the broadcast address given.
+int broadcast_id(ip_path_t *hzpath, in_addr_t bcast_addr);
 
-// Discover network attached FPGAs (via HZ path).
+// Discover network attached FPGAs (via HZ path) on all IPv4-broadcastable interfaces
 int discover_fpgas(ip_path_t *hzpath, ip_fpga_t *found, int max);
+
+// Discover network attached FPGAs. 
+int discover_fpgas_at_addr(in_addr_t bcast_addr,
+			   ip_path_t *hzpath, ip_fpga_t *found, int max);
 
 // Open the stream (sockfd = HZ).
 int stream_open(ip_path_t *hzpath, ip_fpga_t *fpga);

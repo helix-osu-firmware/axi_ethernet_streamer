@@ -8,10 +8,10 @@
 
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
-#define TYPE_NOP 0x00
-#define TYPE_WRITE 0x01
-#define TYPE_READ 0x10
-#define TYPE_UPDATE 0x11
+#define TYPE_NOP 0
+#define TYPE_WRITE 1
+#define TYPE_READ 2
+#define TYPE_UPDATE 3
 void helix_send_control_packet(ip_path_t *path,
 			       ip_fpga_t *fpga,
 			       uint8_t type,
