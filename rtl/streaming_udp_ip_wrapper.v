@@ -229,7 +229,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [31:0] stream_ip_addr;
    wire [15:0] stream_port;
    
-   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),.device_dna_o(device_dna_valid),
+   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),.device_dna_valid_o(device_dna_valid),
 			   .dhcp_reset(hycontrol_dhcp_reset),
 			   .ext_ip_address((vio_ip_force) ? vio_ip_address : dhcp_ip_address),
 			   .ext_ip_force(vio_ip_force),
