@@ -28,7 +28,7 @@ module hycontrol_top(
         // If ext_ip_force is high, the external IP overrides any internal static.
         // This is for when a VIO sets it.
         input [31:0]  ext_ip_address,
-        input         ext_ip_force,
+        input 	      ext_ip_force,
         output 	      dhcp_reset,
         output [31:0] static_ip_address,
         output 	      static_ip_valid, 
@@ -37,7 +37,8 @@ module hycontrol_top(
 	output [31:0] stream_ip_address,
 	output [15:0] stream_udp_port,
 
-    output [56:0] device_dna_o,
+	output [56:0] device_dna_o,
+	output 	      device_dna_valid_o,
 		     
         input 	      clk,
         input 	      reset,
@@ -46,7 +47,9 @@ module hycontrol_top(
 
     parameter DEBUG = "FALSE";
 
-    reg [56:0] device_dna = {57{1'b0}};        
+    reg [56:0] device_dna = {57{1'b0}};
+    reg device_dna_valid = 0;
+   
     // This is the storage for any IP address received by PicoBlaze.
     reg [31:0] my_ip_address = {32{1'b0}};
     // This is the storage when PicoBlaze reads in the IP address. It either comes from
@@ -346,6 +349,8 @@ module hycontrol_top(
                             device_dna[0 +: 8],
                             out_port };
        end
+       if (reset) device_dna_valid <= 0;
+       else if (accept_new_packet) device_dna_valid <= 1;              
     end
     
     generate
@@ -394,5 +399,6 @@ module hycontrol_top(
    assign stream_ip_address = stream_ip_address_reg;
    assign stream_linked = stream_linked_reg;
 
-   assign device_dna_o = device_dna;   
+   assign device_dna_o = device_dna;
+   assign device_dna_valid_o = device_dna_valid;   
 endmodule

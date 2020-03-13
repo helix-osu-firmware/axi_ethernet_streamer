@@ -14,21 +14,21 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 			   input 	 m_axis_tx_tready,
 			   output 	 m_axis_tx_tvalid,
 			   output 	 m_axis_tx_tlast,
-                
-               input [47:0] mac_address,
-               output [56:0] device_dna,
-			   output [31:0] my_ip_address,
+			   input 	 mac_address_valid,
+			   input [47:0]  mac_address,
+			   output [56:0] device_dna,
+			   output 	 device_dna_valid,		       				   output [31:0] my_ip_address,
 			   output 	 my_ip_valid,
 			   input 	 do_dhcp,
 			   // Stream path
 			   input 	 stream_aclk,
 			   input 	 stream_aresetn,
 			   output 	 stream_linked,
-			   output [7:0] stream_axis_rx_tdata,
+			   output [7:0]  stream_axis_rx_tdata,
 			   output 	 stream_axis_rx_tvalid,
 			   input 	 stream_axis_rx_tready,
 			   output 	 stream_axis_rx_tlast,
-			   input [7:0]  stream_axis_tx_tdata,
+			   input [7:0] 	 stream_axis_tx_tdata,
 			   input 	 stream_axis_tx_tvalid,
 			   output 	 stream_axis_tx_tready,
 			   input 	 stream_axis_tx_tlast );
@@ -204,7 +204,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
 
    dhcp_top u_dhcp(.clk(m_axis_aclk),
 						.do_dhcp(do_dhcp || auto_dhcp),
-						.reset(!m_axis_aresetn || dhcp_reset ),
+						.reset(!m_axis_aresetn || dhcp_reset || !mac_address_valid),
 						.second(second_timer),
 						// data/valid/last plus start
 						.udp_in_start(dhcp_in_start),
@@ -229,7 +229,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    wire [31:0] stream_ip_addr;
    wire [15:0] stream_port;
    
-   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),
+   hycontrol_top u_control(.clk(m_axis_aclk),.reset(!m_axis_aresetn),.second(second_timer),.device_dna_o(device_dna),.device_dna_o(device_dna_valid),
 			   .dhcp_reset(hycontrol_dhcp_reset),
 			   .ext_ip_address((vio_ip_force) ? vio_ip_address : dhcp_ip_address),
 			   .ext_ip_force(vio_ip_force),
@@ -333,7 +333,7 @@ module streaming_udp_ip_wrapper( // Ethernet receive
    endgenerate
 
     // sigh, shrink the crap out of this
-   udp_complete_nomac_wrapper #(.MAX_ARP_ENTRIES(32),.CLOCK_FREQ(100000000)) u_udp(.rx_clk(m_axis_aclk),.tx_clk(m_axis_aclk),.reset(!m_axis_aresetn),
+   udp_complete_nomac_wrapper #(.MAX_ARP_ENTRIES(32),.CLOCK_FREQ(100000000)) u_udp(.rx_clk(m_axis_aclk),.tx_clk(m_axis_aclk),.reset(!m_axis_aresetn || !mac_address_valid),
 				    .sec_timer(second_timer),
 				    .mac_tx_tdata(m_axis_tx_tdata),
 				    .mac_tx_tready(m_axis_tx_tready),
