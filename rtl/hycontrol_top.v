@@ -350,7 +350,7 @@ module hycontrol_top(
                             out_port };
        end
        if (reset) device_dna_valid <= 0;
-       else if (accept_new_packet) device_dna_valid <= 1;              
+       else if (accept_next_packet) device_dna_valid <= 1;              
     end
     
     generate
