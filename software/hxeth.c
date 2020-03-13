@@ -17,6 +17,17 @@ void helix_send_control_packet(ip_path_t *path,
 			       uint8_t type,
 			       uint32_t address,
 			       uint16_t data);
+
+// these are super-sleazy
+void helix_update(ip_path_t *hw, ip_fpga_t *fpga,
+		  uint32_t address,
+		  uint16_t data);
+void helix_write(ip_path_t *hw, ip_fpga_t *fpga,
+		  uint32_t address,
+		  uint16_t data);
+uint16_t helix_read(ip_path_t *hw, ip_fpga_t *fpga,
+		    uint32_t address);
+
 // reading means:
 // send control packet with TYPE_READ (helix_send_control_packet(..))
 // get response (n = hxlib_get_response(&hw, rxbuf, 4, 5000))
@@ -30,7 +41,7 @@ int main() {
   unsigned char *rxbuf;
   ip_path_t hz;
   ip_path_t hw;
-  int n,len,nfound;
+  int i,n,len,nfound;
   
   initialize_hz_path(&hz);
   initialize_hw_path(&hw);
@@ -39,7 +50,7 @@ int main() {
   
   // perform discovery procedure
   printf("Discovering... ");
-  nfound = discover_fpgas(&hz, found_fpgas, MAX_FPGAS);
+  nfound = discover_fpgas_at_addr(inet_addr("255.255.255.255"),&hz, found_fpgas, MAX_FPGAS);
   printf("found %d FPGA", nfound);  
   if (nfound>1) printf("s");
   printf(".\n");
@@ -54,25 +65,15 @@ int main() {
   // open the stream link on FPGA #0
   stream_open(&hz, &found_fpgas[0]);
 
-  // technically we should like, send a reset or something here,
-  // I dunno.
-  
-  // note the switch to the HW socket - that's the stream socket
-  helix_send_control_packet(&hw, &found_fpgas[0], 
-			    TYPE_READ, // no-op, for fun
-			    0x0,
-			    0x0);
-  // and watch for a response.
-  n = hxlib_get_response(&hw, rxbuf, 2048, 5000);
-  // this should be 4 bytes unless the FPGA's already set up and
-  // streaming crap out.
-  printf("Received %d bytes\n", n);
-  if (n >= 4) printf("Trying to parse status read: %2.2x\n",
-		     helix_parse_status_packet(rxbuf));
-  
-  // close the stream link on FPGA #0
-  // note that we're back to the hz socket, since this is a control
-  // operation.
+  printf("ID: %4.4x\n", helix_read(&hw, &found_fpgas[0], 0));
+  printf("Version: %4.4x\n", helix_read(&hw, &found_fpgas[0], 1));
+  printf("Date: %4.4x\n", helix_read(&hw, &found_fpgas[0], 2));
+  printf("DNA: ");
+  for (i=0;i<4;i=i+1) {
+    // write the DNA pointer
+    helix_write(&hw, &found_fpgas[0], 3, 3-i);
+    printf("%4.4x", helix_read(&hw, &found_fpgas[0], 3));
+  }
   stream_close(&hz, &found_fpgas[0]);
   
  close_sockets:
@@ -81,6 +82,32 @@ int main() {
   close_path(&hw);
   return 0;
 }
+
+// these are super-sleazy
+void helix_update(ip_path_t *hw, ip_fpga_t *fpga,
+		  uint32_t address,
+		  uint16_t data) {
+  helix_send_control_packet(hw, fpga, TYPE_UPDATE, address, data);
+}
+
+void helix_write(ip_path_t *hw, ip_fpga_t *fpga,
+		 uint32_t address,
+		 uint16_t data) {
+  helix_send_control_packet(hw, fpga, TYPE_WRITE, address, data);
+}
+
+uint16_t helix_read(ip_path_t *hw, ip_fpga_t *fpga,
+		    uint32_t address) {
+  unsigned int n;
+  unsigned char rxbuf[8];
+  helix_send_control_packet(hw, fpga, TYPE_READ, address, 0);
+  // and watch for a response.
+  n = hxlib_get_response(hw, rxbuf, 8, 5000);
+  return helix_parse_status_packet(rxbuf);
+}
+
+
+// these are the underlying functions
 
 void helix_send_control_packet(ip_path_t *hw,
 			       ip_fpga_t *fpga,
@@ -118,8 +145,7 @@ uint16_t helix_parse_status_packet(uint8_t *buf) {
   header = (buf[1] << 8) | buf[0];
   ctrl_word1 = (buf[3] << 8) | buf[2];
   ctrl_word2 = (buf[5] << 8) | buf[4];
-  ctrl_word3 = (buf[6] << 8) | buf[7];
-  
+  ctrl_word3 = (buf[7] << 8) | buf[6];
   if (header != 0x57A7) {
     fprintf(stderr, "error, header %4.4x not 57A7\n", header);
     return 0xFFFF;
