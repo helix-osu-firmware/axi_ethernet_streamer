@@ -37,11 +37,15 @@ uint16_t helix_parse_status_packet(uint8_t *buf);
 
 ip_fpga_t found_fpgas[MAX_FPGAS];
 
-int main() {
+int main(int argc, char *argv[]) {
   unsigned char *rxbuf;
   ip_path_t hz;
   ip_path_t hw;
   int i,n,len,nfound;
+  char *ipaddr="255.255.255.255";
+
+  if (argc==2)
+    ipaddr=argv[1];
   
   initialize_hz_path(&hz);
   initialize_hw_path(&hw);
@@ -50,7 +54,7 @@ int main() {
   
   // perform discovery procedure
   printf("Discovering... ");
-  nfound = discover_fpgas_at_addr(inet_addr("255.255.255.255"),&hz, found_fpgas, MAX_FPGAS);
+  nfound = discover_fpgas_at_addr(inet_addr(ipaddr),&hz, found_fpgas, MAX_FPGAS);
   printf("found %d FPGA", nfound);  
   if (nfound>1) printf("s");
   printf(".\n");
@@ -74,6 +78,7 @@ int main() {
     helix_write(&hw, &found_fpgas[0], 3, 3-i);
     printf("%4.4x", helix_read(&hw, &found_fpgas[0], 3));
   }
+  printf("\n");
   stream_close(&hz, &found_fpgas[0]);
   
  close_sockets:
