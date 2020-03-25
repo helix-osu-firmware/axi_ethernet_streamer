@@ -4,7 +4,7 @@
 // packets and prepends the total length out to another
 // clock domain. This requires 2 FIFOs, one for the
 // data, and another for the packet length.
-// The data buffer is 2048 bytes long (0.5 BRAM)
+// The data buffer is 4096 bytes long (1 BRAM)
 // and the length buffer is 32 entries deep (implemented
 // in slices). 
 //
@@ -12,7 +12,7 @@
 // the flow buffer unless tuser=1 && !wrote_length.
 // which of course means no single-word packets, either.
 // This literally will flat-out break with packets
-// longer than 1024 words or 1 word packets. So like,
+// longer than 2048 words or 1 word packets. So like,
 // don't do that. (Our shortest packets are 4 words)
 //
 //
@@ -32,11 +32,12 @@ module tof_udp_flow_buffer( input         s_axis_aclk,
 			    input 	  m_axis_tready,
 			    output 	  m_axis_tuser,
 			    output 	  m_axis_tlast );
+    // can't exceed 2048 words anyway, this trims the register slices used			    
+    localparam MAX_LENGTH_BITS = 11;			    
     // "s_" prefixed regs are in slave clock domain (sysclk)
     // "m_" prefixed regs are in master clock domain (ethclk)
                 
-    // can't exceed 1024 words anyway, this trims the register slices used
-    reg [9:0]    s_packet_length_counter = {10{1'b0}};
+    reg [MAX_LENGTH_BITS-1:0]    s_packet_length_counter = {MAX_LENGTH_BITS{1'b0}};
     reg          s_capture_length = 0;
     reg          m_wrote_length = 0;   
     // inbound to flow buffer            
@@ -68,7 +69,7 @@ module tof_udp_flow_buffer( input         s_axis_aclk,
     assign       flow_tlast = s_axis_tlast;
     assign       flow_tuser = s_axis_tuser;
     
-    assign       length_tdata = {{5{1'b0}},s_packet_length_counter,1'b0};
+    assign       length_tdata = {{(16-MAX_LENGTH_BITS-1){1'b0}},s_packet_length_counter,1'b0};
     assign       length_tvalid = s_capture_length;
     // length_tready is merged with flow_tready
     
@@ -86,9 +87,9 @@ module tof_udp_flow_buffer( input         s_axis_aclk,
     end
 
     always @(posedge s_axis_aclk) begin
-        if (!s_axis_aresetn) s_packet_length_counter <= {10{1'b0}};
+        if (!s_axis_aresetn) s_packet_length_counter <= {MAX_LENGTH_BITS{1'b0}};
         else if (s_axis_tready && s_axis_tvalid) begin
-            if (s_axis_tuser) s_packet_length_counter <= 10'd1;
+            if (s_axis_tuser) s_packet_length_counter <= 'd1;
             else s_packet_length_counter <= s_packet_length_counter + 1;
         end
         
