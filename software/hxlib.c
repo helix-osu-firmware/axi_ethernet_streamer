@@ -33,7 +33,7 @@ int hxlib_get_response(ip_path_t *path, char *buf, ssize_t nbytes,
   int sockfd = path->sockfd;
   fd_set readfds;
   struct timeval timeout_val;
-  timeout_val.tv_sec = (int) timeout/1000000;
+  timeout_val.tv_sec = (unsigned int) timeout/1000000;
   timeout_val.tv_usec = timeout % 1000000;
   FD_ZERO(&readfds);
   FD_SET(sockfd, &readfds);
