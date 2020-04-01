@@ -99,13 +99,12 @@ module ethstream_top( input clk,
    wire fifo_full;
    wire fifo_read = m_axis_tvalid && m_axis_tready;
    wire fifo_write = udp_in_valid && !fifo_full;
-   wire top_bit;
    ethstream_rx_fifo u_rxfifo(.clk(clk),.rst(!stream_linked),
-                    .din( {1'b0,udp_in_last,udp_in_data} ),
+                    .din( {udp_in_last,udp_in_data} ),
                     .wr_en(fifo_write),
                     .full(fifo_full),
                     .rd_en(fifo_read),
                     .valid(m_axis_tvalid),
-                    .dout( { top_bit, m_axis_tlast, m_axis_tdata } ));
+                    .dout( {m_axis_tlast, m_axis_tdata } ));
    
 endmodule // ethstream_top
