@@ -27,14 +27,14 @@ int hxlib_send_packet(ip_path_t *path, char *buf, ssize_t nbytes,
 		sizeof(struct sockaddr_in));
 }
 
-// timeout in milliseconds
+// timeout in microseconds
 int hxlib_get_response(ip_path_t *path, char *buf, ssize_t nbytes,
 			 uint32_t timeout) {
   int sockfd = path->sockfd;
   fd_set readfds;
   struct timeval timeout_val;
-  timeout_val.tv_sec = 0;
-  timeout_val.tv_usec = timeout;
+  timeout_val.tv_sec = (unsigned int) timeout/1000000;
+  timeout_val.tv_usec = timeout % 1000000;
   FD_ZERO(&readfds);
   FD_SET(sockfd, &readfds);
   if (select(sockfd+1, &readfds, NULL, NULL, &timeout_val) < 0) {
